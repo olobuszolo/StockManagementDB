@@ -3,11 +3,7 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { FlatList, Button, TextInput, View } from "react-native";
 import { useState } from "react";
-
-type Unit = {
-    id: number;
-    name: string;
-}
+import { Unit } from "@/types/units";
 
 
 export default function UnitsScreen() {

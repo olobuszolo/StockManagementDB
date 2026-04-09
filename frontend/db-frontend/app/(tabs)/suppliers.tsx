@@ -63,7 +63,6 @@ export default function SuppliersScreen() {
         try {
             const data = await fetchCategoriesBySupplier(selectedSupplierId);
             setCategoriesBySupplier(data);
-            console.log(data);
         } catch (error) {
             console.error("Error fetching categories for supplier:", error);
         }

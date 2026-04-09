@@ -30,14 +30,14 @@ class OrderCreate(BaseModel):
 
 class OrderItemResponse(BaseModel):
     id: int
-    product_id: int
+    product_name: str
     quantity: float
     unit_price: float
 
 class OrderResponse(BaseModel):
     id: int
-    employee_id: int
-    customer_id: int
+    employee_name: str
+    customer_name: str
     order_date: datetime
     deadline_date: datetime
     status: str
@@ -141,13 +141,149 @@ def create_order(order: OrderCreate):
                 "items": created_items
             }
         
+# @router.get("/", response_model=list[OrderResponse])
+# def get_orders():
+#     query = """
+#         SELECT * FROM orders
+#         """
+#     with get_connection() as conn:
+#         with conn.cursor() as cur:
+#             cur.execute(query)
+#             orders = cur.fetchall()
+#             return orders
+        
 @router.get("/", response_model=list[OrderResponse])
 def get_orders():
-    query = """
-        SELECT * FROM orders
-        """
+    orders_query = """
+        SELECT 
+            o.id,
+            e.name AS employee_name,
+            c.name AS customer_name,
+            o.order_date,
+            o.deadline_date,
+            o.status
+        FROM orders o
+        JOIN employees e ON o.employee_id = e.id
+        JOIN customers c ON o.customer_id = c.id
+        ORDER BY o.order_date DESC
+    """
+
+    items_query = """
+        SELECT 
+            oi.id,
+            p.name AS product_name,
+            oi.quantity,
+            oi.unit_price
+        FROM order_items oi
+        JOIN products p ON oi.product_id = p.id
+        WHERE oi.order_id = %s
+        ORDER BY oi.id
+    """
+
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(query)
-            orders = cur.fetchall()
-            return orders
+            cur.execute(orders_query)
+            orders_data = cur.fetchall()
+
+            result = []
+
+            for order in orders_data:
+                order_id = order["id"]
+
+                cur.execute(items_query, (order_id,))
+                items_data = cur.fetchall()
+
+                items = [
+                    OrderItemResponse(
+                        id=item["id"],
+                        product_name=item["product_name"],
+                        quantity=item["quantity"],
+                        unit_price=item["unit_price"]
+                    )
+                    for item in items_data
+                ]
+
+                result.append(
+                    OrderResponse(
+                        id=order["id"],
+                        employee_name=order["employee_name"],
+                        customer_name=order["customer_name"],
+                        order_date=order["order_date"],
+                        deadline_date=order["deadline_date"],
+                        status=order["status"],
+                        items=items
+                    )
+                )
+
+            return result
+
+@router.get("/{customer_id}/orders-by-customer/", response_model=list[OrderResponse])
+def get_orders_by_customer(customer_id: int):
+    check_customer_query = "SELECT 1 FROM customers WHERE id = %s"
+
+    orders_query = """
+        SELECT 
+            o.id,
+            e.name AS employee_name,
+            c.name AS customer_name,
+            o.order_date,
+            o.deadline_date,
+            o.status
+        FROM orders o
+        JOIN employees e ON o.employee_id = e.id
+        JOIN customers c ON o.customer_id = c.id
+        WHERE o.customer_id = %s
+        ORDER BY o.order_date DESC
+    """
+
+    items_query = """
+        SELECT 
+            oi.id,
+            p.name AS product_name,
+            oi.quantity,
+            oi.unit_price
+        FROM order_items oi
+        JOIN products p ON oi.product_id = p.id
+        WHERE oi.order_id = %s
+        ORDER BY oi.id
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(check_customer_query, (customer_id,))
+            if cur.fetchone() is None:
+                raise HTTPException(status_code=404, detail="Customer not found")
+
+            cur.execute(orders_query, (customer_id,))
+            orders_data = cur.fetchall()
+
+            result = []
+
+            for order in orders_data:
+                order_id = order["id"]
+                cur.execute(items_query, (order_id,))
+                items_data = cur.fetchall()
+
+                items = [
+                    OrderItemResponse(
+                        id=item["id"],
+                        product_name=item["product_name"],
+                        quantity=item["quantity"],
+                        unit_price=item["unit_price"]
+                    )
+                    for item in items_data
+                ]
+
+                result.append(
+                    OrderResponse(
+                        id=order["id"],
+                        employee_name=order["employee_name"],
+                        customer_name=order["customer_name"],
+                        order_date=order["order_date"],
+                        deadline_date=order["deadline_date"],
+                        status=order["status"],
+                        items=items
+                    )
+                )
+
+            return result
