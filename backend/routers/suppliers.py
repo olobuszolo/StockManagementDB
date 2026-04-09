@@ -15,6 +15,9 @@ class Supplier(SupplierCreate):
 class SupplierCategoryAssign(BaseModel):
     category_id: int
 
+class SupplierCategoryResponse(BaseModel):
+    category_id: int
+    category_name: str
 
 @router.get("/", response_model=list[Supplier])
 def get_suppliers():
@@ -41,7 +44,7 @@ def create_supplier(supplier: SupplierCreate):
             return new_supplier
         
 
-@router.post("/{supplier_id}/assign-category")
+@router.post("/{supplier_id}/assign-category/")
 def assign_supplier_to_category(supplier_id: int, assignment: SupplierCategoryAssign):
     query = """
         INSERT INTO supplier_categories (supplier_id, category_id)
@@ -54,3 +57,16 @@ def assign_supplier_to_category(supplier_id: int, assignment: SupplierCategoryAs
                 raise HTTPException(status_code=400, detail="Failed to assign supplier to category")
             return {"message": "Supplier assigned to category successfully"}
         
+@router.get("/{supplier_id}/categories/", response_model=list[SupplierCategoryResponse])
+def get_supplier_categories(supplier_id: int):
+    query = """
+        SELECT sc.category_id, c.name AS category_name
+        FROM supplier_categories sc
+        JOIN categories c ON sc.category_id = c.id
+        WHERE sc.supplier_id = %s
+        """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, (supplier_id,))
+            categories = cur.fetchall()
+            return categories

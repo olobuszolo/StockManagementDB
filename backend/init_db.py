@@ -7,6 +7,7 @@ def init_db():
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             email VARCHAR(255) NOT NULL UNIQUE
+            CHECK (email ~ '^[^@]+@[^@]+\.[^@]+$')
         )
         """,
         """
@@ -20,7 +21,7 @@ def init_db():
         """
         CREATE TABLE IF NOT EXISTS units (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL
+            name VARCHAR(255) NOT NULL UNIQUE
         )
         """,
         """
@@ -42,14 +43,33 @@ def init_db():
             id SERIAL PRIMARY KEY,
             employee_id INTEGER NOT NULL,
             customer_id INTEGER NOT NULL,
-            order_date TIMESTAMP NOT NULL,
-            deadline_date TIMESTAMP NOT NULL,
-            status VARCHAR(50) NOT NULL,
+            order_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            deadline_date TIMESTAMP,
+            status VARCHAR(50) NOT NULL DEFAULT 'pending',
             FOREIGN KEY (employee_id) REFERENCES employees(id),
             FOREIGN KEY (customer_id) REFERENCES customers(id),
             CHECK (status IN ('pending', 'completed', 'cancelled')),
             CHECK (deadline_date > order_date)
         )
+        """,
+        """
+        CREATE OR REPLACE FUNCTION set_deadline_date()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            IF NEW.order_date IS NOT NULL AND NEW.deadline_date IS NULL THEN
+                NEW.deadline_date := NEW.order_date + INTERVAL '7 days';
+            END IF;
+
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """,
+        """
+        DROP TRIGGER IF EXISTS trg_set_deadline_date ON orders;
+        CREATE TRIGGER trg_set_deadline_date
+        BEFORE INSERT OR UPDATE ON orders
+        FOR EACH ROW
+        EXECUTE FUNCTION set_deadline_date();
         """,
         """
         CREATE TABLE IF NOT EXISTS products (
@@ -89,8 +109,9 @@ def init_db():
         CREATE TABLE IF NOT EXISTS deliveries (
             id SERIAL PRIMARY KEY,
             supplier_id INTEGER NOT NULL,
-            order_date TIMESTAMP NOT NULL,
-            status VARCHAR(50) NOT NULL,
+            order_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            completion_date TIMESTAMP,
+            status VARCHAR(50) NOT NULL DEFAULT 'pending',
             FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
             CHECK (status IN ('pending', 'completed', 'cancelled'))
         )

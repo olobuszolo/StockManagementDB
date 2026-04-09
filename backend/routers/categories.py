@@ -2,7 +2,7 @@ from fastapi import HTTPException, APIRouter
 from pydantic import BaseModel
 from database import get_connection
 
-router = APIRouter(prefix="/products", tags=["products"])
+router = APIRouter(prefix="/categories", tags=["categories"])
 
 class CategoryCreate(BaseModel):
     name: str
@@ -10,7 +10,7 @@ class CategoryCreate(BaseModel):
 class Category(CategoryCreate):
     id: int
 
-@router.get("/categories", response_model=list[Category])
+@router.get("/", response_model=list[Category])
 def get_categories():
     query = "SELECT * FROM categories"
     with get_connection() as conn:
@@ -19,7 +19,7 @@ def get_categories():
             categories = cur.fetchall()
             return categories
 
-@router.post("/categories", response_model=Category)
+@router.post("/", response_model=Category)
 def create_category(category: CategoryCreate):
     query = """
         INSERT INTO categories (name)

@@ -20,7 +20,7 @@ class ProductCreate(BaseModel):
 class Product(ProductCreate):
     id: int
 
-@router.get("/units", response_model=list[Unit])
+@router.get("/units/", response_model=list[Unit])
 def get_units():
     query = "SELECT * FROM units"
     with get_connection() as conn:
@@ -29,7 +29,7 @@ def get_units():
             units = cur.fetchall()
             return units
 
-@router.post("/units", response_model=Unit)
+@router.post("/units/", response_model=Unit)
 def create_unit(unit: UnitCreate):
     query = """
         INSERT INTO units (name)
