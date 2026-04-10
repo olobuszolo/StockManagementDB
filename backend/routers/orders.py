@@ -17,22 +17,40 @@ class Customer(CustomerCreate):
 
 #Orders model
 class OrderItemCreate(BaseModel):
-    product_id: int
+    product_name: str
     quantity: float
     unit_price: float
 
 class OrderCreate(BaseModel):
     employee_id: int
     customer_id: int
-    order_date: datetime
-    status: str
     items: list[OrderItemCreate]
+
+class CreatedOrderItemResponse(BaseModel):
+    id: int
+    product_name: str
+    quantity: float
+    unit_price: float
+    unit_name: str
+
+
+class CreatedOrderResponse(BaseModel):
+    id: int
+    employee_name: str
+    customer_name: str
+    order_date: datetime
+    deadline_date: datetime
+    status: str
+    items: list[CreatedOrderItemResponse]
+
 
 class OrderItemResponse(BaseModel):
     id: int
     product_name: str
     quantity: float
     unit_price: float
+    unit_name: str
+
 
 class OrderResponse(BaseModel):
     id: int
@@ -42,7 +60,6 @@ class OrderResponse(BaseModel):
     deadline_date: datetime
     status: str
     items: list[OrderItemResponse]
-
 
 @router.get("/customers/", response_model=list[Customer])
 def get_customers():
@@ -68,26 +85,32 @@ def create_customer(customer: CustomerCreate):
                 raise HTTPException(status_code=400, detail="Failed to create customer")
             return new_customer
         
-@router.post("/", response_model=OrderCreate)
+@router.post("/", response_model=CreatedOrderResponse)
 def create_order(order: OrderCreate):
     if not order.items:
         raise HTTPException(status_code=400, detail="Order must contain at least one item")
-    
-    check_employee_query = "SELECT id FROM employees WHERE id = %s"
-    check_customer_query = "SELECT id FROM customers WHERE id = %s"
-    check_product_query = "SELECT id, quantity FROM products WHERE id = %s"
+
+    check_employee_query = "SELECT id, name FROM employees WHERE id = %s"
+    check_customer_query = "SELECT id, name FROM customers WHERE id = %s"
+    check_product_query = """
+        SELECT p.id, p.name, p.quantity, u.name AS unit_name
+        FROM products p
+        JOIN units u ON p.unit_id = u.id
+        WHERE p.name = %s
+    """
 
     insert_order_query = """
-        INSERT INTO orders (employee_id, customer_id, order_date, status)
-        VALUES (%s, %s, %s, %s)
-        RETURNING id, employee_id, customer_id, order_date, deadline_date, status
-
+        INSERT INTO orders (employee_id, customer_id)
+        VALUES (%s, %s)
+        RETURNING id, order_date, deadline_date, status
     """
+
     insert_order_item_query = """
         INSERT INTO order_items (order_id, product_id, quantity, unit_price)
         VALUES (%s, %s, %s, %s)
-        RETURNING id, product_id, quantity, unit_price
+        RETURNING id, quantity, unit_price
     """
+
     update_product_quantity_query = """
         UPDATE products
         SET quantity = quantity - %s
@@ -98,59 +121,71 @@ def create_order(order: OrderCreate):
         with conn.cursor() as cur:
             cur.execute(check_employee_query, (order.employee_id,))
             employee = cur.fetchone()
-            # Check if employee, customer and products exist
             if employee is None:
                 raise HTTPException(status_code=400, detail="Employee not found")
-            
+
             cur.execute(check_customer_query, (order.customer_id,))
             customer = cur.fetchone()
             if customer is None:
                 raise HTTPException(status_code=400, detail="Customer not found")
-            
-            created_items = []
-            for item in order.items:
-                cur.execute(check_product_query, (item.product_id,))
-                product = cur.fetchone()
-                if product is None:
-                    raise HTTPException(status_code=400, detail=f"Product with id {item.product_id} not found")
-                
-                if product["quantity"] < item.quantity:
-                    raise HTTPException(status_code=400, detail=f"Not enough quantity for product with id {item.product_id}")
-            
-            # Insert order
 
-            cur.execute(insert_order_query, (order.employee_id, order.customer_id, order.order_date, order.status))
+            validated_products = {}
+
+            for item in order.items:
+                cur.execute(check_product_query, (item.product_name,))
+                product = cur.fetchone()
+
+                if product is None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Product '{item.product_name}' not found"
+                    )
+
+                if product["quantity"] < item.quantity:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Not enough quantity for product '{item.product_name}'"
+                    )
+
+                validated_products[item.product_name] = product
+
+            cur.execute(insert_order_query, (order.employee_id, order.customer_id))
             new_order = cur.fetchone()
+
             if new_order is None:
                 raise HTTPException(status_code=400, detail="Failed to create order")
-            
+
+            created_items = []
+
             for item in order.items:
-                cur.execute(insert_order_item_query, (new_order["id"], item.product_id, item.quantity, item.unit_price))
+                product = validated_products[item.product_name]
+                unit_price = item.unit_price
+
+                cur.execute(
+                    insert_order_item_query,
+                    (new_order["id"], product["id"], item.quantity, unit_price)
+                )
                 new_item = cur.fetchone()
-                if new_item is None:
-                    raise HTTPException(status_code=400, detail="Failed to create order item")
-                
-                cur.execute(update_product_quantity_query, (item.quantity, item.product_id))
-                created_items.append(new_item)
-            
+
+                cur.execute(update_product_quantity_query, (item.quantity, product["id"]))
+
+                created_items.append({
+                    "id": new_item["id"],
+                    "product_name": product["name"],
+                    "quantity": new_item["quantity"],
+                    "unit_price": new_item["unit_price"],
+                    "unit_name": product["unit_name"],
+                })
+
             return {
-                "employee_id": new_order["employee_id"],
-                "customer_id": new_order["customer_id"],
+                "id": new_order["id"],
+                "employee_name": employee["name"],
+                "customer_name": customer["name"],
                 "order_date": new_order["order_date"],
+                "deadline_date": new_order["deadline_date"],
                 "status": new_order["status"],
-                "items": created_items
+                "items": created_items,
             }
-        
-# @router.get("/", response_model=list[OrderResponse])
-# def get_orders():
-#     query = """
-#         SELECT * FROM orders
-#         """
-#     with get_connection() as conn:
-#         with conn.cursor() as cur:
-#             cur.execute(query)
-#             orders = cur.fetchall()
-#             return orders
         
 @router.get("/", response_model=list[OrderResponse])
 def get_orders():
@@ -168,14 +203,30 @@ def get_orders():
         ORDER BY o.order_date DESC
     """
 
+    # items_query = """
+    #     SELECT 
+    #         oi.id,
+    #         p.name AS product_name,
+    #         oi.quantity,
+    #         oi.unit_price,
+    #         u.name AS unit_name
+    #     FROM order_items oi
+    #     JOIN products p ON oi.product_id = p.id
+    #     JOIN units u ON p.unit_id = u.id
+    #     WHERE oi.order_id = %s
+    #     ORDER BY oi.id
+    # """
+
     items_query = """
         SELECT 
             oi.id,
             p.name AS product_name,
             oi.quantity,
-            oi.unit_price
+            oi.unit_price,
+            u.name AS unit_name
         FROM order_items oi
         JOIN products p ON oi.product_id = p.id
+        JOIN units u ON p.unit_id = u.id
         WHERE oi.order_id = %s
         ORDER BY oi.id
     """
@@ -198,7 +249,8 @@ def get_orders():
                         id=item["id"],
                         product_name=item["product_name"],
                         quantity=item["quantity"],
-                        unit_price=item["unit_price"]
+                        unit_price=item["unit_price"],
+                        unit_name=item["unit_name"]
                     )
                     for item in items_data
                 ]
@@ -241,9 +293,11 @@ def get_orders_by_customer(customer_id: int):
             oi.id,
             p.name AS product_name,
             oi.quantity,
-            oi.unit_price
+            oi.unit_price,
+            u.name AS unit_name
         FROM order_items oi
         JOIN products p ON oi.product_id = p.id
+        JOIN units u ON p.unit_id = u.id
         WHERE oi.order_id = %s
         ORDER BY oi.id
     """
@@ -269,7 +323,9 @@ def get_orders_by_customer(customer_id: int):
                         id=item["id"],
                         product_name=item["product_name"],
                         quantity=item["quantity"],
-                        unit_price=item["unit_price"]
+                        unit_price=item["unit_price"],
+                        purchase_price=item["purchase_price"],
+                        unit_name=item["unit_name"]
                     )
                     for item in items_data
                 ]

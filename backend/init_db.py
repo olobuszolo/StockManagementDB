@@ -6,8 +6,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS employees (
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
-            email VARCHAR(255) NOT NULL UNIQUE
-            CHECK (email ~ '^[^@]+@[^@]+\.[^@]+$')
+            email VARCHAR(255) NOT NULL UNIQUE,
+            CHECK (email ~ '^[^@]+@[^@]+\\.[^@]+$')
         )
         """,
         """
@@ -35,7 +35,8 @@ def init_db():
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             email VARCHAR(255) NOT NULL UNIQUE,
-            nip VARCHAR(10) NOT NULL UNIQUE
+            nip VARCHAR(10) NOT NULL UNIQUE,
+            CHECK (email ~ '^[^@]+@[^@]+\\.[^@]+$')
         )
         """,
         """
@@ -74,7 +75,7 @@ def init_db():
         """
         CREATE TABLE IF NOT EXISTS products (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
+            name VARCHAR(255) NOT NULL UNIQUE,
             description TEXT,
             quantity DECIMAL(10, 3) NOT NULL,
             unit_id INTEGER NOT NULL,
@@ -93,7 +94,7 @@ def init_db():
             FOREIGN KEY (order_id) REFERENCES orders(id),
             FOREIGN KEY (product_id) REFERENCES products(id),
             CHECK (quantity > 0),
-            CHECK (unit_price >= 0)
+            CHECK (unit_price > 0)
         )
         """,
         """
@@ -113,7 +114,8 @@ def init_db():
             completion_date TIMESTAMP,
             status VARCHAR(50) NOT NULL DEFAULT 'pending',
             FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
-            CHECK (status IN ('pending', 'completed', 'cancelled'))
+            CHECK (status IN ('pending', 'completed', 'cancelled')),
+            CHECK (completion_date > order_date)
         )
         """, 
         """

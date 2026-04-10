@@ -1,6 +1,7 @@
 from fastapi import HTTPException, APIRouter
 from pydantic import BaseModel
 from database import get_connection
+from datetime import datetime
 
 router = APIRouter(prefix="/deliveries", tags=["deliveries"])
 
@@ -20,6 +21,74 @@ class Delivery(DeliveryCreate):
     id: int
     items: list[DeliveryItem]
 
+class DeliveryResponse(BaseModel):
+    supplier_name: str
+    items: list[DeliveryItem]
+
+class CompleteDeliveryItem(BaseModel):
+    id: int
+    product_name: str
+    quantity: float
+    unit_price: float
+
+class CompleteDelivery(BaseModel):
+    id: int
+    supplier_name: str
+    order_date: datetime
+    status: str
+    items: list[CompleteDeliveryItem]
+
+@router.get("/", response_model=list[CompleteDelivery])
+def get_deliveries():
+    deliveries_query = """
+        SELECT d.id, s.name AS supplier_name, d.order_date, d.status
+        FROM deliveries d
+        JOIN suppliers s ON d.supplier_id = s.id
+        ORDER BY d.order_date DESC
+    """
+
+    items_query = """
+        SELECT di.id, p.name AS product_name, di.quantity, di.unit_price
+        FROM delivery_items di
+        JOIN products p ON di.product_id = p.id
+        WHERE di.delivery_id = %s
+        ORDER BY di.id
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(deliveries_query)
+            deliveries = cur.fetchall()
+
+            result = []
+
+            for delivery in deliveries:
+                delivery_id = delivery["id"]
+
+                cur.execute(items_query, (delivery_id,))
+                items_data = cur.fetchall()
+
+                items = [
+                    CompleteDeliveryItem(
+                        id=item["id"],
+                        product_name=item["product_name"],
+                        quantity=item["quantity"],
+                        unit_price=item["unit_price"],
+                    )
+                    for item in items_data
+                ]
+
+                result.append(
+                    CompleteDelivery(
+                        id=delivery["id"],
+                        supplier_name=delivery["supplier_name"],
+                        order_date=delivery["order_date"],
+                        status=delivery["status"],
+                        items=items,
+                    )
+                )
+
+            return result
 
 @router.post("/", response_model=Delivery)
 def create_delivery(delivery: DeliveryCreate):
@@ -60,7 +129,7 @@ def create_delivery(delivery: DeliveryCreate):
             if new_delivery is None:
                 raise HTTPException(status_code=400, detail="Failed to create delivery")
             
-            delivery_id = new_delivery[0]
+            delivery_id = new_delivery["id"]
             items = []
             for item in delivery.items:
                 cur.execute(insert_delivery_item_query, (delivery_id, item.product_id, item.quantity, item.unit_price))
@@ -71,5 +140,5 @@ def create_delivery(delivery: DeliveryCreate):
                 
                 cur.execute(update_product_quantity_query, (item.quantity, item.product_id))
             
-            return Delivery(id=delivery_id, supplier_id=delivery.supplier_id, items=[DeliveryItem(id=item[0], product_id=item[1], quantity=item[2], unit_price=item[3]) for item in items])
+            return Delivery(id=delivery_id, supplier_id=delivery.supplier_id, items=[DeliveryItem(id=item["id"], product_id=item["product_id"], quantity=item["quantity"], unit_price=item["unit_price"]) for item in items])
     

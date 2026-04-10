@@ -24,6 +24,7 @@ export default function SuppliersScreen() {
     const handleFetchCategories = async () => {
         try {
             const data = await fetchCategories();
+            console.log("Fetched categories:", data);
             setCategories(data);
         } catch (error) {
             console.error("Error fetching categories:", error);
