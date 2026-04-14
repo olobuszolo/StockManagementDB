@@ -140,10 +140,13 @@ def init_db():
 
                 RETURN NEW;
             END IF;
+
+            RETURN NULL;
         END;
         $$ LANGUAGE plpgsql;
+        """,
+        """
         DROP TRIGGER IF EXISTS trg_sync_product_stock_with_order_items ON order_items;
-
         CREATE TRIGGER trg_sync_product_stock_with_order_items
         AFTER INSERT ON order_items
         FOR EACH ROW
@@ -162,6 +165,25 @@ def init_db():
         )
         """, 
         """
+        CREATE OR REPLACE FUNCTION set_delivery_status_from_completion_date()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            IF NEW.completion_date IS NOT NULL THEN
+                NEW.status := 'completed';
+            END IF;
+
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """,
+        """
+        DROP TRIGGER IF EXISTS trg_set_delivery_status_from_completion_date ON deliveries;
+        CREATE TRIGGER trg_set_delivery_status_from_completion_date
+        BEFORE INSERT OR UPDATE ON deliveries
+        FOR EACH ROW
+        EXECUTE FUNCTION set_delivery_status_from_completion_date();
+        """,
+        """
         CREATE TABLE IF NOT EXISTS delivery_items (
             id SERIAL PRIMARY KEY,
             delivery_id INTEGER NOT NULL,
@@ -173,6 +195,25 @@ def init_db():
             CHECK (quantity > 0),
             CHECK (unit_price > 0)
         )
+        """,
+        """
+        CREATE OR REPLACE FUNCTION sync_product_stock_with_delivery_items()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            UPDATE products
+            SET quantity = quantity + NEW.quantity
+            WHERE id = NEW.product_id;
+
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """,
+        """
+        DROP TRIGGER IF EXISTS trg_sync_product_stock_with_delivery_items ON delivery_items;
+        CREATE TRIGGER trg_sync_product_stock_with_delivery_items
+        AFTER INSERT ON delivery_items
+        FOR EACH ROW
+        EXECUTE FUNCTION sync_product_stock_with_delivery_items();
         """
     ]
 

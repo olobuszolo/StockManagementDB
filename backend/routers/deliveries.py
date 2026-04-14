@@ -17,6 +17,9 @@ class DeliveryCreate(BaseModel):
     supplier_id: int
     items: list[DeliveryItemCreate]
 
+class DeliveryCompletionUpdate(BaseModel):
+    completion_date: datetime
+
 class Delivery(DeliveryCreate):
     id: int
     items: list[DeliveryItem]
@@ -35,13 +38,14 @@ class CompleteDelivery(BaseModel):
     id: int
     supplier_name: str
     order_date: datetime
+    completion_date: datetime | None = None
     status: str
     items: list[CompleteDeliveryItem]
 
 @router.get("/", response_model=list[CompleteDelivery]) 
 def get_deliveries():
     deliveries_query = """
-        SELECT d.id, s.name AS supplier_name, d.order_date, d.status
+        SELECT d.id, s.name AS supplier_name, d.order_date, d.completion_date, d.status
         FROM deliveries d
         JOIN suppliers s ON d.supplier_id = s.id
         ORDER BY d.order_date DESC
@@ -83,6 +87,7 @@ def get_deliveries():
                         id=delivery["id"],
                         supplier_name=delivery["supplier_name"],
                         order_date=delivery["order_date"],
+                        completion_date=delivery["completion_date"],
                         status=delivery["status"],
                         items=items,
                     )
@@ -106,11 +111,6 @@ def create_delivery(delivery: DeliveryCreate):
         INSERT INTO delivery_items (delivery_id, product_id, quantity, unit_price)
         VALUES (%s, %s, %s, %s)
         RETURNING id, product_id, quantity, unit_price
-    """
-    update_product_quantity_query = """
-        UPDATE products
-        SET quantity = quantity + %s
-        WHERE id = %s
     """
 
     with get_connection() as conn:
@@ -137,8 +137,57 @@ def create_delivery(delivery: DeliveryCreate):
                 if new_item is None:
                     raise HTTPException(status_code=400, detail="Failed to create delivery item")
                 items.append(new_item)
-                
-                cur.execute(update_product_quantity_query, (item.quantity, item.product_id))
             
             return Delivery(id=delivery_id, supplier_id=delivery.supplier_id, items=[DeliveryItem(id=item["id"], product_id=item["product_id"], quantity=item["quantity"], unit_price=item["unit_price"]) for item in items])
-    
+
+@router.put("/{delivery_id}/completion-date", response_model=CompleteDelivery)
+def update_delivery_completion_date(delivery_id: int, delivery_update: DeliveryCompletionUpdate):
+    update_delivery_query = """
+        UPDATE deliveries
+        SET completion_date = %s
+        WHERE id = %s AND status <> 'completed'
+        RETURNING id, supplier_id, order_date, completion_date, status
+    """
+    supplier_query = "SELECT name FROM suppliers WHERE id = %s"
+    items_query = """
+        SELECT di.id, p.name AS product_name, di.quantity, di.unit_price
+        FROM delivery_items di
+        JOIN products p ON di.product_id = p.id
+        WHERE di.delivery_id = %s
+        ORDER BY di.id
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(update_delivery_query, (delivery_update.completion_date, delivery_id))
+            updated_delivery = cur.fetchone()
+
+            if updated_delivery is None:
+                raise HTTPException(status_code=404, detail="Delivery not found or already completed")
+
+            cur.execute(supplier_query, (updated_delivery["supplier_id"],))
+            supplier = cur.fetchone()
+            if supplier is None:
+                raise HTTPException(status_code=400, detail="Supplier not found")
+
+            cur.execute(items_query, (delivery_id,))
+            items_data = cur.fetchall()
+
+            items = [
+                CompleteDeliveryItem(
+                    id=item["id"],
+                    product_name=item["product_name"],
+                    quantity=item["quantity"],
+                    unit_price=item["unit_price"],
+                )
+                for item in items_data
+            ]
+
+            return CompleteDelivery(
+                id=updated_delivery["id"],
+                supplier_name=supplier["name"],
+                order_date=updated_delivery["order_date"],
+                completion_date=updated_delivery["completion_date"],
+                status=updated_delivery["status"],
+                items=items,
+            )
