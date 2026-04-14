@@ -85,6 +85,25 @@ def init_db():
         )
         """,
         """
+        CREATE OR REPLACE FUNCTION prevent_negative_product_quantity()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            IF NEW.quantity < 0 THEN
+                RAISE EXCEPTION 'Insufficient stock for product ID %', NEW.id;
+            END IF;
+
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """,
+        """
+        DROP TRIGGER IF EXISTS trg_prevent_negative_product_quantity ON products;
+        CREATE TRIGGER trg_prevent_negative_product_quantity
+        BEFORE UPDATE OF quantity ON products
+        FOR EACH ROW
+        EXECUTE FUNCTION prevent_negative_product_quantity();
+        """,
+        """
         CREATE TABLE IF NOT EXISTS order_items (
             id SERIAL PRIMARY KEY,
             order_id INTEGER NOT NULL,
@@ -98,13 +117,37 @@ def init_db():
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS supplier_categories (
-            supplier_id INTEGER NOT NULL,
-            category_id INTEGER NOT NULL,
-            PRIMARY KEY (supplier_id, category_id),
-            FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
-            FOREIGN KEY (category_id) REFERENCES categories(id)
-        )
+        CREATE OR REPLACE FUNCTION sync_product_stock_with_order_items()
+        RETURNS TRIGGER AS $$
+        DECLARE
+            available_quantity DECIMAL(10, 3);
+            product_name VARCHAR(255);
+        BEGIN
+            IF TG_OP = 'INSERT' THEN
+                SELECT quantity, name
+                INTO available_quantity, product_name
+                FROM products
+                WHERE id = NEW.product_id
+                FOR UPDATE;
+
+                IF available_quantity < NEW.quantity THEN
+                    RAISE EXCEPTION 'Not enough quantity for product "%"', product_name;
+                END IF;
+
+                UPDATE products
+                SET quantity = quantity - NEW.quantity
+                WHERE id = NEW.product_id;
+
+                RETURN NEW;
+            END IF;
+        END;
+        $$ LANGUAGE plpgsql;
+        DROP TRIGGER IF EXISTS trg_sync_product_stock_with_order_items ON order_items;
+
+        CREATE TRIGGER trg_sync_product_stock_with_order_items
+        AFTER INSERT ON order_items
+        FOR EACH ROW
+        EXECUTE FUNCTION sync_product_stock_with_order_items();
         """,
         """
         CREATE TABLE IF NOT EXISTS deliveries (
