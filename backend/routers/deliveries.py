@@ -38,7 +38,7 @@ class CompleteDelivery(BaseModel):
     status: str
     items: list[CompleteDeliveryItem]
 
-@router.get("/", response_model=list[CompleteDelivery])
+@router.get("/", response_model=list[CompleteDelivery]) 
 def get_deliveries():
     deliveries_query = """
         SELECT d.id, s.name AS supplier_name, d.order_date, d.status

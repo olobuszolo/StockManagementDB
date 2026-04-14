@@ -203,20 +203,6 @@ def get_orders():
         ORDER BY o.order_date DESC
     """
 
-    # items_query = """
-    #     SELECT 
-    #         oi.id,
-    #         p.name AS product_name,
-    #         oi.quantity,
-    #         oi.unit_price,
-    #         u.name AS unit_name
-    #     FROM order_items oi
-    #     JOIN products p ON oi.product_id = p.id
-    #     JOIN units u ON p.unit_id = u.id
-    #     WHERE oi.order_id = %s
-    #     ORDER BY oi.id
-    # """
-
     items_query = """
         SELECT 
             oi.id,
