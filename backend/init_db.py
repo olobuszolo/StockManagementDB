@@ -89,7 +89,7 @@ def init_db():
         RETURNS TRIGGER AS $$
         BEGIN
             IF NEW.quantity < 0 THEN
-                RAISE EXCEPTION 'Insufficient stock for product ID %', NEW.id;
+                RAISE EXCEPTION 'Negative stock for product ID %', NEW.id;
             END IF;
 
             RETURN NEW;
@@ -123,25 +123,21 @@ def init_db():
             available_quantity DECIMAL(10, 3);
             product_name VARCHAR(255);
         BEGIN
-            IF TG_OP = 'INSERT' THEN
-                SELECT quantity, name
-                INTO available_quantity, product_name
-                FROM products
-                WHERE id = NEW.product_id
-                FOR UPDATE;
+            SELECT quantity, name
+            INTO available_quantity, product_name
+            FROM products
+            WHERE id = NEW.product_id
+            FOR UPDATE;
 
-                IF available_quantity < NEW.quantity THEN
-                    RAISE EXCEPTION 'Not enough quantity for product "%"', product_name;
-                END IF;
-
-                UPDATE products
-                SET quantity = quantity - NEW.quantity
-                WHERE id = NEW.product_id;
-
-                RETURN NEW;
+            IF available_quantity < NEW.quantity THEN
+                RAISE EXCEPTION 'Not enough quantity for product "%"', product_name;
             END IF;
 
-            RETURN NULL;
+            UPDATE products
+            SET quantity = quantity - NEW.quantity
+            WHERE id = NEW.product_id;
+
+            RETURN NEW;
         END;
         $$ LANGUAGE plpgsql;
         """,
