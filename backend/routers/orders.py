@@ -2,6 +2,7 @@ from fastapi import HTTPException, APIRouter
 from pydantic import BaseModel
 from database import get_connection
 from datetime import datetime
+import psycopg
 
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -111,12 +112,6 @@ def create_order(order: OrderCreate):
         RETURNING id, quantity, unit_price
     """
 
-    update_product_quantity_query = """
-        UPDATE products
-        SET quantity = quantity - %s
-        WHERE id = %s
-    """
-
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(check_employee_query, (order.employee_id,))
@@ -161,13 +156,14 @@ def create_order(order: OrderCreate):
                 product = validated_products[item.product_name]
                 unit_price = item.unit_price
 
-                cur.execute(
-                    insert_order_item_query,
-                    (new_order["id"], product["id"], item.quantity, unit_price)
-                )
-                new_item = cur.fetchone()
-
-                cur.execute(update_product_quantity_query, (item.quantity, product["id"]))
+                try:
+                    cur.execute(
+                        insert_order_item_query,
+                        (new_order["id"], product["id"], item.quantity, unit_price)
+                    )
+                    new_item = cur.fetchone()
+                except psycopg.errors.RaiseException as exc:
+                    raise HTTPException(status_code=400, detail=str(exc).strip()) from exc
 
                 created_items.append({
                     "id": new_item["id"],
@@ -310,7 +306,6 @@ def get_orders_by_customer(customer_id: int):
                         product_name=item["product_name"],
                         quantity=item["quantity"],
                         unit_price=item["unit_price"],
-                        purchase_price=item["purchase_price"],
                         unit_name=item["unit_name"]
                     )
                     for item in items_data

@@ -6,3 +6,7 @@ export type CreateDeliveryPayload = {
         unit_price: number;
     }[];
 };
+
+export type UpdateDeliveryCompletionPayload = {
+    completion_date: string;
+};

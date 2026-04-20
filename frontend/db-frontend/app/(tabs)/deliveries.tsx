@@ -47,9 +47,9 @@
 
 import { ThemedText } from "@/components/themed-text";
 import { useEffect, useState } from "react";
-import { FlatList, Button, TextInput, View, ScrollView } from "react-native";
+import { Button, TextInput, View, ScrollView } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { fetchDeliveries, createDelivery } from "@/api/deliveries";
+import { fetchDeliveries, createDelivery, updateDeliveryCompletionDate } from "@/api/deliveries";
 import { fetchProducts } from "@/api/products";
 import { fetchSuppliers } from "@/api/suppliers";
 import { Product } from "@/types/products";
@@ -72,6 +72,7 @@ type Delivery = {
     id: number;
     supplier_name: string;
     order_date: string;
+    completion_date?: string | null;
     status: string;
     items: DeliveryItem[];
 };
@@ -89,6 +90,8 @@ export default function DeliveriesScreen() {
     const [deliveryItems, setDeliveryItems] = useState<
         { product_id: number; quantity: number; unit_price: number }[]
     >([]);
+    const [selectedIncompleteDeliveryId, setSelectedIncompleteDeliveryId] = useState<number | null>(null);
+    const [completionDate, setCompletionDate] = useState("");
 
     const handleFetchDeliveries = async () => {
         try {
@@ -182,6 +185,31 @@ export default function DeliveriesScreen() {
         }
     };
 
+    const handleCompleteDelivery = async () => {
+        if (selectedIncompleteDeliveryId === null) {
+            console.warn("Select delivery");
+            return;
+        }
+
+        if (!completionDate.trim()) {
+            console.warn("Enter completion date");
+            return;
+        }
+
+        try {
+            await updateDeliveryCompletionDate(selectedIncompleteDeliveryId, {
+                completion_date: completionDate.trim(),
+            });
+
+            setSelectedIncompleteDeliveryId(null);
+            setCompletionDate("");
+
+            await handleFetchDeliveries();
+        } catch (error) {
+            console.error("Error updating delivery completion date:", error);
+        }
+    };
+
     const getProductNameById = (productId: number) => {
         const product = products.find((item) => item.id === productId);
         return product ? product.name : `Product ID: ${productId}`;
@@ -192,6 +220,8 @@ export default function DeliveriesScreen() {
         handleFetchSuppliers();
         handleFetchProducts();
     }, []);
+
+    const incompleteDeliveries = deliveries.filter((delivery) => delivery.status !== "completed");
 
     return (
     <ScrollView
@@ -222,6 +252,7 @@ export default function DeliveriesScreen() {
                         />
                         <ThemedText>Supplier name: {item.supplier_name}</ThemedText>
                         <ThemedText>Order date: {item.order_date}</ThemedText>
+                        <ThemedText>Completion date: {item.completion_date ?? "Not completed"}</ThemedText>
                         <ThemedText>Status: {item.status}</ThemedText>
 
                         <ThemedText style={{ fontWeight: "bold", marginTop: 8 }}>
@@ -344,6 +375,50 @@ export default function DeliveriesScreen() {
 
         <View style={{ marginTop: 16 }}>
             <Button title="Create delivery" onPress={handleCreateDelivery} />
+        </View>
+
+        <View style={{ height: 1, backgroundColor: "white", marginVertical: 20 }} />
+
+        <ThemedText style={{ fontSize: 20, fontWeight: "bold" }}>
+            Complete Delivery
+        </ThemedText>
+
+        <ThemedText style={{ fontWeight: "bold", marginTop: 10 }}>
+            Select delivery
+        </ThemedText>
+        <Picker
+            selectedValue={selectedIncompleteDeliveryId}
+            onValueChange={(itemValue) =>
+                setSelectedIncompleteDeliveryId(itemValue === null ? null : Number(itemValue))
+            }
+            style={{ color: "black", backgroundColor: "white" }}
+        >
+            <Picker.Item label="Select not completed delivery..." value={null} color="gray" />
+            {incompleteDeliveries.map((delivery) => (
+                <Picker.Item
+                    key={delivery.id}
+                    label={`${delivery.id} - ${delivery.supplier_name}`}
+                    value={delivery.id}
+                />
+            ))}
+        </Picker>
+
+        <TextInput
+            placeholder="Completion date (YYYY-MM-DD HH:MM:SS)"
+            value={completionDate}
+            onChangeText={setCompletionDate}
+            style={{
+                borderWidth: 1,
+                borderColor: "gray",
+                padding: 10,
+                marginTop: 10,
+                borderRadius: 8,
+                backgroundColor: "white",
+            }}
+        />
+
+        <View style={{ marginTop: 16 }}>
+            <Button title="Set completion date" onPress={handleCompleteDelivery} />
         </View>
     </ScrollView>
 );

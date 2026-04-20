@@ -1,5 +1,5 @@
 import  { API_BASE_URL } from "@/constants/url";
-import { CreateDeliveryPayload } from "@/types/deliveries";
+import { CreateDeliveryPayload, UpdateDeliveryCompletionPayload } from "@/types/deliveries";
 
 export const fetchDeliveries = async () => {
     try {
@@ -24,10 +24,28 @@ export const createDelivery = async (payload: CreateDeliveryPayload) => {
         },
         body: JSON.stringify(payload)
     });
-    if (!response.ok) {
-        throw new Error('Failed to create delivery');
-    }
     const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.detail || 'Failed to create delivery');
+    }
+    return data;
+};
+
+export const updateDeliveryCompletionDate = async (
+    deliveryId: number,
+    payload: UpdateDeliveryCompletionPayload
+) => {
+    const response = await fetch(`${API_BASE_URL}/deliveries/${deliveryId}/completion-date`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.detail || 'Failed to update delivery completion date');
+    }
     return data;
 };
 

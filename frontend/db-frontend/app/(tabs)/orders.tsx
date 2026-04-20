@@ -27,6 +27,17 @@ export default function OrdersScreen() {
     const [selectedProductName, setSelectedProductName] = useState<string | null>(null);    
     const [quantity, setQuantity] = useState("");
     const [orderItems, setOrderItems] = useState<OrderItemCreate[]>([]);
+    const [orderFormKey, setOrderFormKey] = useState(0);
+
+    const resetOrderForm = () => {
+        setSelectedEmployeeId(null);
+        setNewOrderCustomerId(null);
+        setSelectedProductName(null);
+        setQuantity("");
+        setUnitPrice("");
+        setOrderItems([]);
+        setOrderFormKey((prev) => prev + 1);
+    };
 
     const handleFetchOrders = async () => {
         try {
@@ -90,6 +101,7 @@ export default function OrdersScreen() {
 
     const handleAddItem = () => {
         const parsedQuantity = Number(quantity);
+        const parsedUnitPrice = Number(unitPrice);
 
         if (!selectedProductName) {
             console.warn("Select product");
@@ -101,12 +113,17 @@ export default function OrdersScreen() {
             return;
         }
 
+        if (Number.isNaN(parsedUnitPrice) || parsedUnitPrice <= 0) {
+            console.warn("Unit price must be > 0");
+            return;
+        }
+
         setOrderItems((prev) => [
             ...prev,
             {
                 product_name: selectedProductName,
                 quantity: parsedQuantity,
-                unit_price: Number(unitPrice),
+                unit_price: parsedUnitPrice,
             },
         ]);
 
@@ -141,9 +158,8 @@ export default function OrdersScreen() {
             const createdOrder = await createOrder(payload);
 
             setOrders((prev) => [createdOrder, ...prev]);
-            setOrderItems([]);
-            setSelectedEmployeeId(null);
-            setNewOrderCustomerId(null);
+            resetOrderForm();
+            handleFetchProducts();
 
             console.log("Order created:", createdOrder);
         } catch (error) {
@@ -249,102 +265,108 @@ export default function OrdersScreen() {
                 onPress={handleFetchOrdersByCustomer}
             />
             <View style={{ height: 1, backgroundColor: 'white', marginVertical: 20 }} />
-            <ThemedText style={{ fontSize: 20, fontWeight: 'bold' }}>Create New Order</ThemedText>
-            <ThemedText style={{ fontWeight: "bold", marginTop: 10 }}>Select employee</ThemedText>
-            <Picker
-                selectedValue={selectedEmployeeId}
-                onValueChange={(itemValue) => setSelectedEmployeeId(itemValue === null ? null : Number(itemValue))}
-                style={{ color: "black" }}
-            >
-                <Picker.Item label="Select employee..." value={null} color="gray" />
-                {employees.map((employee: BusinessEntity) => (
-                    <Picker.Item
-                        key={employee.id}
-                        label={employee.name}
-                        value={employee.id}
-                    />
+            <View key={orderFormKey}>
+                <ThemedText style={{ fontSize: 20, fontWeight: 'bold' }}>Create New Order</ThemedText>
+                <ThemedText style={{ fontWeight: "bold", marginTop: 10 }}>Select employee</ThemedText>
+                <Picker
+                    selectedValue={selectedEmployeeId}
+                    onValueChange={(itemValue) => setSelectedEmployeeId(itemValue === null ? null : Number(itemValue))}
+                    style={{ color: "black" }}
+                >
+                    <Picker.Item label="Select employee..." value={null} color="gray" />
+                    {employees.map((employee: BusinessEntity) => (
+                        <Picker.Item
+                            key={employee.id}
+                            label={employee.name}
+                            value={employee.id}
+                        />
+                    ))}
+                </Picker>
+
+                <ThemedText style={{ fontWeight: "bold", marginTop: 10 }}>Select customer</ThemedText>
+                <Picker
+                    selectedValue={newOrderCustomerId}
+                    onValueChange={(itemValue) => setNewOrderCustomerId(itemValue === null ? null : Number(itemValue))}
+                    style={{ color: "black" }}
+                >
+                    <Picker.Item label="Select customer..." value={null} color="gray" />
+                    {customers.map((customer: BusinessEntity) => (
+                        <Picker.Item
+                            key={customer.id}
+                            label={customer.name}
+                            value={customer.id}
+                        />
+                    ))}
+                </Picker>
+
+                <ThemedText style={{ fontWeight: "bold", marginTop: 10 }}>
+                    Select product
+                </ThemedText>
+
+                <Picker
+                    selectedValue={selectedProductName}
+                    onValueChange={(itemValue) =>
+                        setSelectedProductName(itemValue === null ? null : String(itemValue))
+                    }
+                    style={{ color: "black" }}
+                >
+                    <Picker.Item label="Select product..." value={null} color="gray" />
+                    {products.map((product) => (
+                        <Picker.Item
+                            key={product.id}
+                            label={product.name}
+                            value={product.name}
+                        />
+                    ))}
+                </Picker>
+
+                <TextInput
+                    placeholder="Quantity"
+                    value={quantity}
+                    onChangeText={setQuantity}
+                    keyboardType="numeric"
+                    style={{
+                        borderWidth: 1,
+                        borderColor: "gray",
+                        padding: 10,
+                        marginTop: 10,
+                        borderRadius: 8,
+                        backgroundColor: "white",
+                    }}
+                />
+
+                <TextInput
+                    placeholder="Unit Price"
+                    value={unitPrice}
+                    onChangeText={setUnitPrice}
+                    keyboardType="numeric"
+                    style={{
+                        borderWidth: 1,
+                        borderColor: "gray",
+                        padding: 10,
+                        marginTop: 10,
+                        borderRadius: 8,
+                        backgroundColor: "white",
+                    }}
+                />
+
+                <Button title="Add item" onPress={handleAddItem} />
+
+                {orderItems.map((item, index) => (
+                    <View key={index} style={{ marginTop: 8 }}>
+                        <ThemedText>
+                            {item.product_name} - {item.quantity} - {item.unit_price}
+                        </ThemedText>
+                    </View>
                 ))}
-            </Picker>
 
-            <ThemedText style={{ fontWeight: "bold", marginTop: 10 }}>Select customer</ThemedText>
-            <Picker
-                selectedValue={newOrderCustomerId}
-                onValueChange={(itemValue) => setNewOrderCustomerId(itemValue === null ? null : Number(itemValue))}
-                style={{ color: "black" }}
-            >
-                <Picker.Item label="Select customer..." value={null} color="gray" />
-                {customers.map((customer: BusinessEntity) => (
-                    <Picker.Item
-                        key={customer.id}
-                        label={customer.name}
-                        value={customer.id}
-                    />
-                ))}
-            </Picker>
-
-            <ThemedText style={{ fontWeight: "bold", marginTop: 10 }}>
-                Select product
-            </ThemedText>
-
-            <Picker
-                selectedValue={selectedProductName}
-                onValueChange={(itemValue) =>
-                    setSelectedProductName(itemValue === null ? null : String(itemValue))
-                }
-                style={{ color: "black" }}
-            >
-                <Picker.Item label="Select product..." value={null} color="gray" />
-                {products.map((product) => (
-                    <Picker.Item
-                        key={product.id}
-                        label={product.name}
-                        value={product.name}
-                    />
-                ))}
-            </Picker>
-
-            <TextInput
-                placeholder="Quantity"
-                value={quantity}
-                onChangeText={setQuantity}
-                keyboardType="numeric"
-                style={{
-                    borderWidth: 1,
-                    borderColor: "gray",
-                    padding: 10,
-                    marginTop: 10,
-                    borderRadius: 8,
-                    backgroundColor: "white",
-                }}
-            />
-
-            <TextInput
-                placeholder="Unit Price"
-                value={unitPrice}
-                onChangeText={setUnitPrice}
-                keyboardType="numeric"
-                style={{
-                    borderWidth: 1,
-                    borderColor: "gray",
-                    padding: 10,
-                    marginTop: 10,
-                    borderRadius: 8,
-                    backgroundColor: "white",
-                }}
-            />
-
-            <Button title="Add item" onPress={handleAddItem} />
-
-            {orderItems.map((item, index) => (
-                <View key={index} style={{ marginTop: 8 }}>
-                    <ThemedText>
-                        {item.product_name} - {item.quantity}
-                    </ThemedText>
+                <View style={{ marginTop: 12 }}>
+                    <Button title="Create order" onPress={handleCreateOrder} />
                 </View>
-            ))}
 
-            <View style={{ marginTop: 12 }}>
-                <Button title="Create order" onPress={handleCreateOrder} />
+                <View style={{ marginTop: 12, marginBottom: 24 }}>
+                    <Button title="Cancel creating order" onPress={resetOrderForm} color="#b22222" />
+                </View>
             </View>
         </ScrollView>
 
