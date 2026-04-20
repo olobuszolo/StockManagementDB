@@ -8,5 +8,5 @@ export type CreateDeliveryPayload = {
 };
 
 export type UpdateDeliveryCompletionPayload = {
-    completion_date: string;
+    completion_date?: string;
 };

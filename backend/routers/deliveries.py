@@ -1,5 +1,5 @@
 from fastapi import HTTPException, APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from database import get_connection
 from datetime import datetime
 
@@ -18,7 +18,7 @@ class DeliveryCreate(BaseModel):
     items: list[DeliveryItemCreate]
 
 class DeliveryCompletionUpdate(BaseModel):
-    completion_date: datetime
+    completion_date: datetime | None = None
 
 class Delivery(DeliveryCreate):
     id: int
@@ -142,10 +142,12 @@ def create_delivery(delivery: DeliveryCreate):
 
 @router.put("/{delivery_id}/completion-date", response_model=CompleteDelivery)
 def update_delivery_completion_date(delivery_id: int, delivery_update: DeliveryCompletionUpdate):
+    completion_date = delivery_update.completion_date or datetime.now()
+
     update_delivery_query = """
         UPDATE deliveries
         SET completion_date = %s
-        WHERE id = %s AND status <> 'completed'
+        WHERE id = %s AND status = 'pending'
         RETURNING id, supplier_id, order_date, completion_date, status
     """
     supplier_query = "SELECT name FROM suppliers WHERE id = %s"
@@ -159,11 +161,11 @@ def update_delivery_completion_date(delivery_id: int, delivery_update: DeliveryC
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(update_delivery_query, (delivery_update.completion_date, delivery_id))
+            cur.execute(update_delivery_query, (completion_date, delivery_id))
             updated_delivery = cur.fetchone()
 
             if updated_delivery is None:
-                raise HTTPException(status_code=404, detail="Delivery not found or already completed")
+                raise HTTPException(status_code=404, detail="Pending delivery not found")
 
             cur.execute(supplier_query, (updated_delivery["supplier_id"],))
             supplier = cur.fetchone()

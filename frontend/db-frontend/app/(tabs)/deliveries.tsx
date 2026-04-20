@@ -171,7 +171,7 @@ export default function DeliveriesScreen() {
             };
 
             await createDelivery(payload);
-            console.log("Delivery created");
+            console.log("Delivery created in pending status");
 
             setSelectedSupplierId(null);
             setDeliveryItems([]);
@@ -187,19 +187,16 @@ export default function DeliveriesScreen() {
 
     const handleCompleteDelivery = async () => {
         if (selectedIncompleteDeliveryId === null) {
-            console.warn("Select delivery");
-            return;
-        }
-
-        if (!completionDate.trim()) {
-            console.warn("Enter completion date");
+            console.warn("Select pending delivery");
             return;
         }
 
         try {
-            await updateDeliveryCompletionDate(selectedIncompleteDeliveryId, {
-                completion_date: completionDate.trim(),
-            });
+            const payload = completionDate.trim()
+                ? { completion_date: completionDate.trim() }
+                : {};
+
+            await updateDeliveryCompletionDate(selectedIncompleteDeliveryId, payload);
 
             setSelectedIncompleteDeliveryId(null);
             setCompletionDate("");
@@ -221,7 +218,7 @@ export default function DeliveriesScreen() {
         handleFetchProducts();
     }, []);
 
-    const incompleteDeliveries = deliveries.filter((delivery) => delivery.status !== "completed");
+    const pendingDeliveries = deliveries.filter((delivery) => delivery.status === "pending");
 
     return (
     <ScrollView
@@ -380,11 +377,27 @@ export default function DeliveriesScreen() {
         <View style={{ height: 1, backgroundColor: "white", marginVertical: 20 }} />
 
         <ThemedText style={{ fontSize: 20, fontWeight: "bold" }}>
-            Complete Delivery
+            Receive Pending Delivery
         </ThemedText>
 
+        {pendingDeliveries.length > 0 && (
+            <View style={{ marginTop: 12 }}>
+                <ThemedText style={{ fontWeight: "bold" }}>
+                    Pending deliveries:
+                </ThemedText>
+
+                {pendingDeliveries.map((delivery) => (
+                    <View key={delivery.id} style={{ marginTop: 8 }}>
+                        <ThemedText>
+                            #{delivery.id} - {delivery.supplier_name} - ordered: {delivery.order_date}
+                        </ThemedText>
+                    </View>
+                ))}
+            </View>
+        )}
+
         <ThemedText style={{ fontWeight: "bold", marginTop: 10 }}>
-            Select delivery
+            Select pending delivery
         </ThemedText>
         <Picker
             selectedValue={selectedIncompleteDeliveryId}
@@ -393,8 +406,8 @@ export default function DeliveriesScreen() {
             }
             style={{ color: "black", backgroundColor: "white" }}
         >
-            <Picker.Item label="Select not completed delivery..." value={null} color="gray" />
-            {incompleteDeliveries.map((delivery) => (
+            <Picker.Item label="Select pending delivery..." value={null} color="gray" />
+            {pendingDeliveries.map((delivery) => (
                 <Picker.Item
                     key={delivery.id}
                     label={`${delivery.id} - ${delivery.supplier_name}`}
@@ -404,7 +417,7 @@ export default function DeliveriesScreen() {
         </Picker>
 
         <TextInput
-            placeholder="Completion date (YYYY-MM-DD HH:MM:SS)"
+            placeholder="Completion date optional (YYYY-MM-DD HH:MM:SS)"
             value={completionDate}
             onChangeText={setCompletionDate}
             style={{
@@ -418,7 +431,7 @@ export default function DeliveriesScreen() {
         />
 
         <View style={{ marginTop: 16 }}>
-            <Button title="Set completion date" onPress={handleCompleteDelivery} />
+            <Button title="Complete delivery and add items to stock" onPress={handleCompleteDelivery} />
         </View>
     </ScrollView>
 );

@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from init_db import init_db
 from routers.employees import router as employees_router
 from routers.products import router as products_router
 from routers.categories import router as categories_router
@@ -23,4 +24,9 @@ app.include_router(categories_router)
 app.include_router(orders_router)
 app.include_router(suppliers_router)
 app.include_router(deliveries_router)
+
+
+@app.on_event("startup")
+def startup_event():
+    init_db()
 

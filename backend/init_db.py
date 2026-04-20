@@ -193,12 +193,16 @@ def init_db():
         )
         """,
         """
-        CREATE OR REPLACE FUNCTION sync_product_stock_with_delivery_items()
+        CREATE OR REPLACE FUNCTION sync_product_stock_on_delivery_completion()
         RETURNS TRIGGER AS $$
         BEGIN
-            UPDATE products
-            SET quantity = quantity + NEW.quantity
-            WHERE id = NEW.product_id;
+            IF OLD.status <> 'completed' AND NEW.status = 'completed' THEN
+                UPDATE products p
+                SET quantity = p.quantity + di.quantity
+                FROM delivery_items di
+                WHERE di.delivery_id = NEW.id
+                  AND di.product_id = p.id;
+            END IF;
 
             RETURN NEW;
         END;
@@ -206,10 +210,11 @@ def init_db():
         """,
         """
         DROP TRIGGER IF EXISTS trg_sync_product_stock_with_delivery_items ON delivery_items;
-        CREATE TRIGGER trg_sync_product_stock_with_delivery_items
-        AFTER INSERT ON delivery_items
+        DROP TRIGGER IF EXISTS trg_sync_product_stock_on_delivery_completion ON deliveries;
+        CREATE TRIGGER trg_sync_product_stock_on_delivery_completion
+        AFTER UPDATE ON deliveries
         FOR EACH ROW
-        EXECUTE FUNCTION sync_product_stock_with_delivery_items();
+        EXECUTE FUNCTION sync_product_stock_on_delivery_completion();
         """
     ]
 
