@@ -77,6 +77,9 @@ export default function SuppliersScreen() {
         try {
             await assignCategoryToSupplier(selectedAssignSupplierId, selectedAssignCategoryId);
             console.log("Category assigned successfully");
+            if (selectedSupplierId === selectedAssignSupplierId) {
+                await handleFetchCategoriesBySupplier();
+            }
         } catch (error) {
             console.error("Error assigning category to supplier:", error);
         }
@@ -132,8 +135,8 @@ export default function SuppliersScreen() {
                 <Picker
                     selectedValue={selectedSupplierId}
                     onValueChange={(itemValue) => {
-                        setSelectedSupplierId(itemValue)}}
-                    style={{ color: "black" }}
+                        setSelectedSupplierId(itemValue === null ? null : Number(itemValue))}}
+                    style={{ color: "black", backgroundColor: "white" }}
                 >
                     <Picker.Item label="Select supplier..." value={null} color="gray" />
                     {suppliers.map((supplier) => (
@@ -160,8 +163,8 @@ export default function SuppliersScreen() {
                 <Picker
                     selectedValue={selectedAssignSupplierId}
                     onValueChange={(itemValue) => {
-                        setSelectedAssignSupplierId(itemValue)}}
-                    style={{ color: "black" }}
+                        setSelectedAssignSupplierId(itemValue === null ? null : Number(itemValue))}}
+                    style={{ color: "black", backgroundColor: "white" }}
                 >
                     <Picker.Item label="Select supplier..." value={null} color="gray" />
                     {suppliers.map((supplier) => (
@@ -175,8 +178,8 @@ export default function SuppliersScreen() {
                 <Picker
                     selectedValue={selectedAssignCategoryId}
                     onValueChange={(itemValue) => {
-                        setSelectedAssignCategoryId(itemValue)}}
-                    style={{ color: "black" }}
+                        setSelectedAssignCategoryId(itemValue === null ? null : Number(itemValue))}}
+                    style={{ color: "black", backgroundColor: "white" }}
                 >
                     <Picker.Item label="Select category..." value={null} color="gray" />
                     {categories.map((category) => (

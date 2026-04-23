@@ -91,10 +91,8 @@ def create_order(order: OrderCreate):
     if not order.items:
         raise HTTPException(status_code=400, detail="Order must contain at least one item")
 
-    check_employee_query = "SELECT id, name FROM employees WHERE id = %s"
-    check_customer_query = "SELECT id, name FROM customers WHERE id = %s"
     check_product_query = """
-        SELECT p.id, p.name, p.quantity, u.name AS unit_name
+        SELECT p.id, p.name, u.name AS unit_name
         FROM products p
         JOIN units u ON p.unit_id = u.id
         WHERE p.name = %s
@@ -106,6 +104,14 @@ def create_order(order: OrderCreate):
         RETURNING id, order_date, deadline_date, status
     """
 
+    order_names_query = """
+        SELECT e.name AS employee_name, c.name AS customer_name
+        FROM orders o
+        JOIN employees e ON o.employee_id = e.id
+        JOIN customers c ON o.customer_id = c.id
+        WHERE o.id = %s
+    """
+
     insert_order_item_query = """
         INSERT INTO order_items (order_id, product_id, quantity, unit_price)
         VALUES (%s, %s, %s, %s)
@@ -114,16 +120,6 @@ def create_order(order: OrderCreate):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(check_employee_query, (order.employee_id,))
-            employee = cur.fetchone()
-            if employee is None:
-                raise HTTPException(status_code=400, detail="Employee not found")
-
-            cur.execute(check_customer_query, (order.customer_id,))
-            customer = cur.fetchone()
-            if customer is None:
-                raise HTTPException(status_code=400, detail="Customer not found")
-
             validated_products = {}
 
             for item in order.items:
@@ -136,19 +132,20 @@ def create_order(order: OrderCreate):
                         detail=f"Product '{item.product_name}' not found"
                     )
 
-                if product["quantity"] < item.quantity:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Not enough quantity for product '{item.product_name}'"
-                    )
-
                 validated_products[item.product_name] = product
 
-            cur.execute(insert_order_query, (order.employee_id, order.customer_id))
+            try:
+                cur.execute(insert_order_query, (order.employee_id, order.customer_id))
+            except psycopg.errors.ForeignKeyViolation as exc:
+                raise HTTPException(status_code=400, detail=str(exc).strip()) from exc
+
             new_order = cur.fetchone()
 
             if new_order is None:
                 raise HTTPException(status_code=400, detail="Failed to create order")
+
+            cur.execute(order_names_query, (new_order["id"],))
+            order_names = cur.fetchone()
 
             created_items = []
 
@@ -162,7 +159,11 @@ def create_order(order: OrderCreate):
                         (new_order["id"], product["id"], item.quantity, unit_price)
                     )
                     new_item = cur.fetchone()
-                except psycopg.errors.RaiseException as exc:
+                except (
+                    psycopg.errors.RaiseException,
+                    psycopg.errors.CheckViolation,
+                    psycopg.errors.ForeignKeyViolation,
+                ) as exc:
                     raise HTTPException(status_code=400, detail=str(exc).strip()) from exc
 
                 created_items.append({
@@ -175,8 +176,8 @@ def create_order(order: OrderCreate):
 
             return {
                 "id": new_order["id"],
-                "employee_name": employee["name"],
-                "customer_name": customer["name"],
+                "employee_name": order_names["employee_name"],
+                "customer_name": order_names["customer_name"],
                 "order_date": new_order["order_date"],
                 "deadline_date": new_order["deadline_date"],
                 "status": new_order["status"],

@@ -105,8 +105,12 @@ export default function ProductsScreen() {
                 data={products}
                 keyExtractor={(item: Product) => item.id.toString()}
                 renderItem={({ item }: { item: Product }) => (
-                    <ThemedView>
-                        <ThemedText>{item.name} - {item.description} - {item.quantity} - {item.unit_name}</ThemedText>
+                    <ThemedView style={{ paddingVertical: 8 }}>
+                        <ThemedText>Product name: {item.name}</ThemedText>
+                        <ThemedText>Description: {item.description}</ThemedText>
+                        <ThemedText>Quantity: {item.quantity}</ThemedText>
+                        <ThemedText>Unit: {item.unit_name}</ThemedText>
+                        <ThemedText>Category: {item.category_name}</ThemedText>
                     </ThemedView>
                 )}
             />
