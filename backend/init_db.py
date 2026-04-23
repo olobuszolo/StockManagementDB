@@ -55,11 +55,13 @@ def init_db():
             customer_id INTEGER NOT NULL,
             order_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             deadline_date TIMESTAMP,
+            completion_date TIMESTAMP,
             status VARCHAR(50) NOT NULL DEFAULT 'pending',
             FOREIGN KEY (employee_id) REFERENCES employees(id),
             FOREIGN KEY (customer_id) REFERENCES customers(id),
             CHECK (status IN ('pending', 'completed')),
-            CHECK (deadline_date > order_date)
+            CHECK (deadline_date > order_date),
+            CHECK (completion_date IS NULL OR completion_date > order_date)
         )
         """,
         """
@@ -80,6 +82,25 @@ def init_db():
         BEFORE INSERT OR UPDATE ON orders
         FOR EACH ROW
         EXECUTE FUNCTION set_deadline_date();
+        """,
+        """
+        CREATE OR REPLACE FUNCTION set_order_status_from_completion_date()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            IF NEW.completion_date IS NOT NULL THEN
+                NEW.status := 'completed';
+            END IF;
+
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """,
+        """
+        DROP TRIGGER IF EXISTS trg_set_order_status_from_completion_date ON orders;
+        CREATE TRIGGER trg_set_order_status_from_completion_date
+        BEFORE INSERT OR UPDATE ON orders
+        FOR EACH ROW
+        EXECUTE FUNCTION set_order_status_from_completion_date();
         """,
         """
         CREATE TABLE IF NOT EXISTS products (
@@ -226,6 +247,23 @@ def init_db():
         FROM deliveries d
         JOIN suppliers s ON s.id = d.supplier_id
         WHERE d.status = 'pending';
+        """,
+        """
+        CREATE OR REPLACE VIEW incomplete_orders_view AS
+        SELECT
+            o.id,
+            o.employee_id,
+            e.name AS employee_name,
+            o.customer_id,
+            c.name AS customer_name,
+            o.order_date,
+            o.deadline_date,
+            o.completion_date,
+            o.status
+        FROM orders o
+        JOIN employees e ON e.id = o.employee_id
+        JOIN customers c ON c.id = o.customer_id
+        WHERE o.status = 'pending';
         """,
         """
         CREATE OR REPLACE FUNCTION sync_product_stock_on_delivery_completion()

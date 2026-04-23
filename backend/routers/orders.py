@@ -41,6 +41,7 @@ class CreatedOrderResponse(BaseModel):
     customer_name: str
     order_date: datetime
     deadline_date: datetime
+    completion_date: datetime | None = None
     status: str
     items: list[CreatedOrderItemResponse]
 
@@ -59,8 +60,23 @@ class OrderResponse(BaseModel):
     customer_name: str
     order_date: datetime
     deadline_date: datetime
+    completion_date: datetime | None = None
     status: str
     items: list[OrderItemResponse]
+
+class IncompleteOrder(BaseModel):
+    id: int
+    employee_id: int
+    employee_name: str
+    customer_id: int
+    customer_name: str
+    order_date: datetime
+    deadline_date: datetime
+    completion_date: datetime | None = None
+    status: str
+
+class OrderCompletionUpdate(BaseModel):
+    completion_date: datetime | None = None
 
 @router.get("/customers/", response_model=list[Customer])
 def get_customers():
@@ -101,7 +117,7 @@ def create_order(order: OrderCreate):
     insert_order_query = """
         INSERT INTO orders (employee_id, customer_id)
         VALUES (%s, %s)
-        RETURNING id, order_date, deadline_date, status
+        RETURNING id, order_date, deadline_date, completion_date, status
     """
 
     order_names_query = """
@@ -180,6 +196,7 @@ def create_order(order: OrderCreate):
                 "customer_name": order_names["customer_name"],
                 "order_date": new_order["order_date"],
                 "deadline_date": new_order["deadline_date"],
+                "completion_date": new_order["completion_date"],
                 "status": new_order["status"],
                 "items": created_items,
             }
@@ -193,6 +210,7 @@ def get_orders():
             c.name AS customer_name,
             o.order_date,
             o.deadline_date,
+            o.completion_date,
             o.status
         FROM orders o
         JOIN employees e ON o.employee_id = e.id
@@ -245,12 +263,41 @@ def get_orders():
                         customer_name=order["customer_name"],
                         order_date=order["order_date"],
                         deadline_date=order["deadline_date"],
+                        completion_date=order["completion_date"],
                         status=order["status"],
                         items=items
                     )
                 )
 
             return result
+
+@router.get("/incomplete", response_model=list[IncompleteOrder])
+def get_incomplete_orders():
+    query = """
+        SELECT *
+        FROM incomplete_orders_view
+        ORDER BY order_date DESC
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query)
+            orders = cur.fetchall()
+
+            return [
+                IncompleteOrder(
+                    id=order["id"],
+                    employee_id=order["employee_id"],
+                    employee_name=order["employee_name"],
+                    customer_id=order["customer_id"],
+                    customer_name=order["customer_name"],
+                    order_date=order["order_date"],
+                    deadline_date=order["deadline_date"],
+                    completion_date=order["completion_date"],
+                    status=order["status"],
+                )
+                for order in orders
+            ]
 
 @router.get("/{customer_id}/orders-by-customer/", response_model=list[OrderResponse])
 def get_orders_by_customer(customer_id: int):
@@ -263,6 +310,7 @@ def get_orders_by_customer(customer_id: int):
             c.name AS customer_name,
             o.order_date,
             o.deadline_date,
+            o.completion_date,
             o.status
         FROM orders o
         JOIN employees e ON o.employee_id = e.id
@@ -319,9 +367,79 @@ def get_orders_by_customer(customer_id: int):
                         customer_name=order["customer_name"],
                         order_date=order["order_date"],
                         deadline_date=order["deadline_date"],
+                        completion_date=order["completion_date"],
                         status=order["status"],
                         items=items
                     )
                 )
 
             return result
+
+@router.put("/{order_id}/completion-date", response_model=OrderResponse)
+def update_order_completion_date(order_id: int, order_update: OrderCompletionUpdate):
+    completion_date = order_update.completion_date or datetime.now()
+
+    update_order_query = """
+        UPDATE orders
+        SET completion_date = %s
+        WHERE id = %s AND status = 'pending'
+        RETURNING id, employee_id, customer_id, order_date, deadline_date, completion_date, status
+    """
+
+    order_names_query = """
+        SELECT e.name AS employee_name, c.name AS customer_name
+        FROM orders o
+        JOIN employees e ON o.employee_id = e.id
+        JOIN customers c ON o.customer_id = c.id
+        WHERE o.id = %s
+    """
+
+    items_query = """
+        SELECT 
+            oi.id,
+            p.name AS product_name,
+            oi.quantity,
+            oi.unit_price,
+            u.name AS unit_name
+        FROM order_items oi
+        JOIN products p ON oi.product_id = p.id
+        JOIN units u ON p.unit_id = u.id
+        WHERE oi.order_id = %s
+        ORDER BY oi.id
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(update_order_query, (completion_date, order_id))
+            updated_order = cur.fetchone()
+
+            if updated_order is None:
+                raise HTTPException(status_code=404, detail="Pending order not found")
+
+            cur.execute(order_names_query, (order_id,))
+            order_names = cur.fetchone()
+
+            cur.execute(items_query, (order_id,))
+            items_data = cur.fetchall()
+
+            items = [
+                OrderItemResponse(
+                    id=item["id"],
+                    product_name=item["product_name"],
+                    quantity=item["quantity"],
+                    unit_price=item["unit_price"],
+                    unit_name=item["unit_name"]
+                )
+                for item in items_data
+            ]
+
+            return OrderResponse(
+                id=updated_order["id"],
+                employee_name=order_names["employee_name"],
+                customer_name=order_names["customer_name"],
+                order_date=updated_order["order_date"],
+                deadline_date=updated_order["deadline_date"],
+                completion_date=updated_order["completion_date"],
+                status=updated_order["status"],
+                items=items
+            )

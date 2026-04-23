@@ -1,18 +1,20 @@
 import { ThemedText } from "@/components/themed-text";
-import { useEffect, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { FlatList, Button, TextInput, View, ScrollView } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { createOrder, fetchOrders, fetchOrdersByCustomer } from "@/api/orders";
-import { Order, OrderItemCreate } from "@/types/orders";
+import { createOrder, fetchIncompleteOrders, fetchOrders, fetchOrdersByCustomer, updateOrderCompletionDate } from "@/api/orders";
+import { IncompleteOrder, Order, OrderItemCreate } from "@/types/orders";
 import { fetchCustomers } from "@/api/customers";
 import { BusinessEntity } from "@/types/customers";
 import { fetchEmployees } from "@/api/employees";
 import { Product } from "@/types/products";
 import { fetchProducts } from "@/api/products";
+import { useFocusEffect } from "@react-navigation/native";
 
 
 export default function OrdersScreen() {
     const [orders, setOrders] = useState<Order[]>([]);
+    const [incompleteOrders, setIncompleteOrders] = useState<IncompleteOrder[]>([]);
     const [customers, setCustomers] = useState<BusinessEntity[]>([]);
     const [employees, setEmployees] = useState<BusinessEntity[]>([]);
     const [products, setProducts] = useState<Product[]>([]);
@@ -28,6 +30,8 @@ export default function OrdersScreen() {
     const [quantity, setQuantity] = useState("");
     const [orderItems, setOrderItems] = useState<OrderItemCreate[]>([]);
     const [orderFormKey, setOrderFormKey] = useState(0);
+    const [selectedPendingOrderId, setSelectedPendingOrderId] = useState<number | null>(null);
+    const [completionDate, setCompletionDate] = useState("");
 
     const resetOrderForm = () => {
         setSelectedEmployeeId(null);
@@ -45,6 +49,15 @@ export default function OrdersScreen() {
             setOrders(response);
         } catch (error) {
             console.error("Error fetching orders:", error);
+        }
+    };
+
+    const handleFetchIncompleteOrders = async () => {
+        try {
+            const response = await fetchIncompleteOrders();
+            setIncompleteOrders(response);
+        } catch (error) {
+            console.error("Error fetching incomplete orders:", error);
         }
     };
 
@@ -166,14 +179,47 @@ export default function OrdersScreen() {
             console.error("Error creating order:", error);
         }
     };
-            
 
-    useEffect(() => {
-        handleFetchOrders();
-        handleFetchCustomers();
-        handleFetchEmployees();
-        handleFetchProducts();
-    }, []);
+    const handleCompleteOrder = async () => {
+        if (selectedPendingOrderId === null) {
+            console.warn("Select pending order");
+            return;
+        }
+
+        try {
+            const payload = completionDate.trim()
+                ? { completion_date: completionDate.trim() }
+                : {};
+
+            await updateOrderCompletionDate(selectedPendingOrderId, payload);
+
+            setSelectedPendingOrderId(null);
+            setCompletionDate("");
+
+            await handleFetchOrders();
+            await handleFetchIncompleteOrders();
+
+            if (showOrdersByCustomer && selectedCustomerId !== null) {
+                await loadOrdersByCustomer(selectedCustomerId);
+            }
+        } catch (error) {
+            console.error("Error updating order completion date:", error);
+        }
+    };
+            
+    useFocusEffect(
+        useCallback(() => {
+            handleFetchOrders();
+            handleFetchIncompleteOrders();
+            handleFetchCustomers();
+            handleFetchEmployees();
+            handleFetchProducts();
+        }, [])
+    );
+    const selectedProductUnitName = useMemo(
+        () => products.find((product) => product.name === selectedProductName)?.unit_name,
+        [products, selectedProductName]
+    );
 
 
     return (
@@ -192,10 +238,12 @@ export default function OrdersScreen() {
                     renderItem={({ item }: { item: Order; }) => (
                         <View>
                             <View style={{ height: 1, backgroundColor: 'gray', marginVertical: 5 }} />
+                            <ThemedText>Order ID: {item.id}</ThemedText>
                             <ThemedText>Employee name: {item.employee_name}</ThemedText>
                             <ThemedText>Customer name: {item.customer_name}</ThemedText>
                             <ThemedText>Order date: {item.order_date}</ThemedText>
                             <ThemedText>Deadline date: {item.deadline_date}</ThemedText>
+                            <ThemedText>Completion date: {item.completion_date ?? "Not completed"}</ThemedText>
                             <ThemedText>Status: {item.status}</ThemedText>
                             <ThemedText style={{ fontWeight: 'bold' }}>Items:</ThemedText>
                             {item.items.map((orderItem, index) => (
@@ -245,9 +293,11 @@ export default function OrdersScreen() {
                         renderItem={({ item }: { item: Order; }) => (
                             <View>
                                 <View style={{ height: 1, backgroundColor: 'gray', marginVertical: 5 }} />
+                            <ThemedText>Order ID: {item.id}</ThemedText>
                             <ThemedText>Employee name: {item.employee_name}</ThemedText>
                             <ThemedText>Order date: {item.order_date}</ThemedText>
                             <ThemedText>Deadline date: {item.deadline_date}</ThemedText>
+                            <ThemedText>Completion date: {item.completion_date ?? "Not completed"}</ThemedText>
                             <ThemedText>Status: {item.status}</ThemedText>
                             <ThemedText style={{ fontWeight: 'bold' }}>Items:</ThemedText>
                             {item.items.map((orderItem, index) => (
@@ -264,6 +314,54 @@ export default function OrdersScreen() {
                 title={showOrdersByCustomer ? "Hide Orders By Customer" : "Show Orders By Customer"}
                 onPress={handleFetchOrdersByCustomer}
             />
+            <View style={{ height: 1, backgroundColor: 'white', marginVertical: 20 }} />
+            <ThemedText style={{ fontSize: 20, fontWeight: 'bold' }}>Complete Pending Order</ThemedText>
+            {incompleteOrders.length > 0 && (
+                <View style={{ marginTop: 12 }}>
+                    <ThemedText style={{ fontWeight: 'bold' }}>Pending orders:</ThemedText>
+                    {incompleteOrders.map((order) => (
+                        <View key={order.id} style={{ marginTop: 8 }}>
+                            <ThemedText>
+                                #{order.id} - {order.customer_name} - ordered: {order.order_date}
+                            </ThemedText>
+                        </View>
+                    ))}
+                </View>
+            )}
+            <ThemedText style={{ fontWeight: "bold", marginTop: 10 }}>Select pending order</ThemedText>
+            <Picker
+                selectedValue={selectedPendingOrderId}
+                onValueChange={(itemValue) =>
+                    setSelectedPendingOrderId(itemValue === null ? null : Number(itemValue))
+                }
+                style={{ color: "black", backgroundColor: "white" }}
+            >
+                <Picker.Item label="Select pending order..." value={null} color="gray" />
+                {incompleteOrders.map((order) => (
+                    <Picker.Item
+                        key={order.id}
+                        label={`${order.id} - ${order.customer_name}`}
+                        value={order.id}
+                    />
+                ))}
+            </Picker>
+            <TextInput
+                placeholder="Completion date optional (YYYY-MM-DD HH:MM:SS)"
+                value={completionDate}
+                onChangeText={setCompletionDate}
+                style={{
+                    borderWidth: 1,
+                    borderColor: "gray",
+                    padding: 10,
+                    marginTop: 10,
+                    borderRadius: 8,
+                    backgroundColor: "white",
+                }}
+            />
+            <View style={{ marginTop: 12 }}>
+                <Button title="Complete order" onPress={handleCompleteOrder} />
+            </View>
+
             <View style={{ height: 1, backgroundColor: 'white', marginVertical: 20 }} />
             <View key={orderFormKey}>
                 <ThemedText style={{ fontSize: 20, fontWeight: 'bold' }}>Create New Order</ThemedText>
@@ -321,7 +419,7 @@ export default function OrdersScreen() {
                 </Picker>
 
                 <TextInput
-                    placeholder="Quantity"
+                    placeholder={selectedProductUnitName ? `Quantity (${selectedProductUnitName})` : "Quantity"}
                     value={quantity}
                     onChangeText={setQuantity}
                     keyboardType="numeric"

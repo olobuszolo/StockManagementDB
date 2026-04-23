@@ -2,11 +2,12 @@ import { assignCategoryToSupplier, createSupplier, fetchCategoriesBySupplier, fe
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BusinessEntity, BusinessEntityCreate } from "@/types/customers";
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { FlatList, Button, TextInput, View, ScrollView } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { Category, CategoryBySupplier } from "@/types/categories";
 import { fetchCategories } from "@/api/categories";
+import { useFocusEffect } from "@react-navigation/native";
 
 export default function SuppliersScreen() {
     const [suppliers, setSuppliers] = useState<BusinessEntity[]>([]);
@@ -51,6 +52,7 @@ export default function SuppliersScreen() {
         try {            
             await createSupplier(form);
             setForm({ name: "", email: "", nip: "" });
+            await handleFetchSuppliers();
         } catch (error) {
             console.error("Error creating supplier:", error);
         }
@@ -85,10 +87,12 @@ export default function SuppliersScreen() {
         }
     }
 
-    useEffect(() => {
-        handleFetchSuppliers();
-        handleFetchCategories();
-    }, []);
+    useFocusEffect(
+        useCallback(() => {
+            handleFetchSuppliers();
+            handleFetchCategories();
+        }, [])
+    );
 
     return (
         <ScrollView style={{ flex: 1 }}>
