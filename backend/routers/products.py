@@ -1,6 +1,7 @@
 from fastapi import HTTPException, APIRouter
 from pydantic import BaseModel
 from database import get_connection
+from datetime import datetime
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -19,6 +20,13 @@ class ProductCreate(BaseModel):
 
 class Product(ProductCreate):
     id: int
+
+class ProductNewestPrice(BaseModel):
+    product_id: int
+    product_name: str
+    newest_price: float | None = None
+    delivery_id: int | None = None
+    delivery_order_date: datetime | None = None
 
 @router.get("/units/", response_model=list[Unit])
 def get_units():
@@ -105,6 +113,19 @@ def create_product(product: ProductCreate):
                 raise HTTPException(status_code=400, detail="Failed to fetch created product")
 
             return new_product
+
+@router.get("/newest-prices/", response_model=list[ProductNewestPrice])
+def get_newest_product_prices():
+    query = """
+        SELECT *
+        FROM newest_product_prices_view
+        ORDER BY product_name
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query)
+            prices = cur.fetchall()
+            return prices
 
 @router.get("/", response_model=list[Product])
 def get_products():

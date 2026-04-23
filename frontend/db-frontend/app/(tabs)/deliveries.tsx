@@ -1,65 +1,13 @@
-// import { ThemedText } from "@/components/themed-text";
-// import { useEffect, useState } from "react";
-// import { FlatList, Button, TextInput, View, ScrollView } from "react-native";
-// import { Picker } from "@react-native-picker/picker";
-// import { BusinessEntity } from "@/types/customers";
-// import { fetchDeliveries } from "@/api/deliveries";
-
-// export default function DeliveriesScreen() {
-//     const [deliveries, setDeliveries] = useState([]);
-
-//     const [form, setForm] = useState({
-
-//     })
-
-//     const handleFetchDeliveries = async () => {
-//         try {
-//             const response = await fetchDeliveries();
-//             setDeliveries(response);
-//         } catch (error) {
-//             console.error("Error fetching deliveries:", error);
-//         }
-//     }
-
-//     const handleCreateDelivery = async () => {
-//         try {
-//             await handleCreateDelivery(form);
-//         } catch (error) {
-//             console.error("Error creating delivery:", error);
-//         }
-//     };
-        
-//     return (
-//         <ScrollView style={{ flex: 1 }}>
-//             <ThemedText style={{ fontSize: 24, fontWeight: 'bold' }}>Deliveries Screen</ThemedText>
-//             <View style={{ height: 5, backgroundColor: 'white', marginVertical: 20 }} />
-//             <Button title="Show all deliveries" onPress={handleFetchDeliveries} />
-//             <ThemedText style={{ fontSize: 20, fontWeight: 'bold' }}>All Deliveries</ThemedText>
-
-//             <View style={{ height: 1, backgroundColor: 'white', marginVertical: 20 }} />
-//             <Button title="Create Delivery" onPress={handleCreateDelivery} />
-//             <ThemedText style={{ fontSize: 20, fontWeight: 'bold' }}>All Deliveries</ThemedText>
-            
-//         </ScrollView>
-//     )
-// }
-
-
 import { ThemedText } from "@/components/themed-text";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button, TextInput, View, ScrollView } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { fetchDeliveries, createDelivery, updateDeliveryCompletionDate } from "@/api/deliveries";
+import { fetchDeliveries, fetchIncompleteDeliveries, createDelivery, updateDeliveryCompletionDate } from "@/api/deliveries";
 import { fetchProducts } from "@/api/products";
-import { fetchSuppliers } from "@/api/suppliers";
+import { fetchCategoriesBySupplier, fetchSuppliers } from "@/api/suppliers";
+import { CategoryBySupplier } from "@/types/categories";
 import { Product } from "@/types/products";
 import { BusinessEntity } from "@/types/customers";
-
-type DeliveryItemCreate = {
-    product_id: number;
-    quantity: number;
-    unit_price: number;
-};
 
 type DeliveryItem = {
     id: number;
@@ -79,10 +27,12 @@ type Delivery = {
 
 export default function DeliveriesScreen() {
     const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+    const [incompleteDeliveries, setIncompleteDeliveries] = useState<Delivery[]>([]);
     const [showAllDeliveries, setShowAllDeliveries] = useState(false);
 
     const [suppliers, setSuppliers] = useState<BusinessEntity[]>([]);
     const [products, setProducts] = useState<Product[]>([]);
+    const [supplierCategories, setSupplierCategories] = useState<CategoryBySupplier[]>([]);
     const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
     const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
     const [quantity, setQuantity] = useState("");
@@ -99,6 +49,15 @@ export default function DeliveriesScreen() {
             setDeliveries(response);
         } catch (error) {
             console.error("Error fetching deliveries:", error);
+        }
+    };
+
+    const handleFetchIncompleteDeliveries = async () => {
+        try {
+            const response = await fetchIncompleteDeliveries();
+            setIncompleteDeliveries(response);
+        } catch (error) {
+            console.error("Error fetching incomplete deliveries:", error);
         }
     };
 
@@ -120,9 +79,20 @@ export default function DeliveriesScreen() {
         }
     };
 
+    const handleSupplierChange = (itemValue: number | null) => {
+        setSelectedSupplierId(itemValue === null ? null : Number(itemValue));
+        setSelectedProductId(null);
+        setDeliveryItems([]);
+    };
+
     const handleAddItem = () => {
         const parsedQuantity = Number(quantity);
         const parsedUnitPrice = Number(unitPrice);
+
+        if (selectedSupplierId === null) {
+            console.warn("Select supplier");
+            return;
+        }
 
         if (selectedProductId === null) {
             console.warn("Select product");
@@ -180,6 +150,7 @@ export default function DeliveriesScreen() {
             setSelectedProductId(null);
 
             await handleFetchDeliveries();
+            await handleFetchIncompleteDeliveries();
         } catch (error) {
             console.error("Error creating delivery:", error);
         }
@@ -202,6 +173,7 @@ export default function DeliveriesScreen() {
             setCompletionDate("");
 
             await handleFetchDeliveries();
+            await handleFetchIncompleteDeliveries();
         } catch (error) {
             console.error("Error updating delivery completion date:", error);
         }
@@ -214,11 +186,39 @@ export default function DeliveriesScreen() {
 
     useEffect(() => {
         handleFetchDeliveries();
+        handleFetchIncompleteDeliveries();
         handleFetchSuppliers();
         handleFetchProducts();
     }, []);
 
-    const pendingDeliveries = deliveries.filter((delivery) => delivery.status === "pending");
+    useEffect(() => {
+        const handleFetchSupplierCategories = async () => {
+            if (selectedSupplierId === null) {
+                setSupplierCategories([]);
+                return;
+            }
+
+            try {
+                const response = await fetchCategoriesBySupplier(selectedSupplierId);
+                setSupplierCategories(response);
+            } catch (error) {
+                console.error("Error fetching categories for supplier:", error);
+                setSupplierCategories([]);
+            }
+        };
+
+        handleFetchSupplierCategories();
+    }, [selectedSupplierId]);
+
+    const pendingDeliveries = incompleteDeliveries.filter((delivery) => delivery.status === "pending");
+    const supplierCategoryNames = useMemo(
+        () => new Set(supplierCategories.map((category) => category.category_name)),
+        [supplierCategories]
+    );
+    const productsForSelectedSupplier = useMemo(
+        () => products.filter((product) => supplierCategoryNames.has(product.category_name)),
+        [products, supplierCategoryNames]
+    );
 
     return (
     <ScrollView
@@ -277,6 +277,30 @@ export default function DeliveriesScreen() {
         <View style={{ height: 1, backgroundColor: "white", marginVertical: 20 }} />
 
         <ThemedText style={{ fontSize: 20, fontWeight: "bold" }}>
+            Incomplete Deliveries
+        </ThemedText>
+
+        {incompleteDeliveries.length === 0 ? (
+            <ThemedText style={{ marginTop: 10 }}>
+                No incomplete deliveries.
+            </ThemedText>
+        ) : (
+            incompleteDeliveries.map((delivery) => (
+                <View key={delivery.id}>
+                    <View
+                        style={{ height: 1, backgroundColor: "gray", marginVertical: 10 }}
+                    />
+                    <ThemedText>Supplier name: {delivery.supplier_name}</ThemedText>
+                    <ThemedText>Order date: {delivery.order_date}</ThemedText>
+                    <ThemedText>Completion date: {delivery.completion_date ?? "Not completed"}</ThemedText>
+                    <ThemedText>Status: {delivery.status}</ThemedText>
+                </View>
+            ))
+        )}
+
+        <View style={{ height: 1, backgroundColor: "white", marginVertical: 20 }} />
+
+        <ThemedText style={{ fontSize: 20, fontWeight: "bold" }}>
             Create New Delivery
         </ThemedText>
 
@@ -285,9 +309,7 @@ export default function DeliveriesScreen() {
         </ThemedText>
         <Picker
             selectedValue={selectedSupplierId}
-            onValueChange={(itemValue) =>
-                setSelectedSupplierId(itemValue === null ? null : Number(itemValue))
-            }
+            onValueChange={handleSupplierChange}
             style={{ color: "black", backgroundColor: "white" }}
         >
             <Picker.Item label="Select supplier..." value={null} color="gray" />
@@ -308,10 +330,11 @@ export default function DeliveriesScreen() {
             onValueChange={(itemValue) =>
                 setSelectedProductId(itemValue === null ? null : Number(itemValue))
             }
+            enabled={selectedSupplierId !== null && productsForSelectedSupplier.length > 0}
             style={{ color: "black", backgroundColor: "white" }}
         >
             <Picker.Item label="Select product..." value={null} color="gray" />
-            {products.map((product) => (
+            {productsForSelectedSupplier.map((product) => (
                 <Picker.Item
                     key={product.id}
                     label={product.name}
@@ -434,5 +457,5 @@ export default function DeliveriesScreen() {
             <Button title="Complete delivery and add items to stock" onPress={handleCompleteDelivery} />
         </View>
     </ScrollView>
-);
+    );
 }

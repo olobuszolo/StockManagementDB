@@ -16,6 +16,21 @@ export const fetchDeliveries = async () => {
     }
 };
 
+export const fetchIncompleteDeliveries = async () => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/deliveries/incomplete`);
+        if (!response.ok) {
+            throw new Error('Failed to fetch incomplete deliveries');
+        }
+        const data = await response.json();
+        return data;
+    }
+    catch (error) {
+        console.error('Error fetching incomplete deliveries:', error);
+        throw error;
+    }
+};
+
 export const createDelivery = async (payload: CreateDeliveryPayload) => {
     const response = await fetch(`${API_BASE_URL}/deliveries/`, {
         method: 'POST',

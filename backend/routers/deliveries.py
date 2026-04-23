@@ -42,6 +42,15 @@ class CompleteDelivery(BaseModel):
     status: str
     items: list[CompleteDeliveryItem]
 
+
+class IncompleteDelivery(BaseModel):
+    id: int
+    supplier_id: int
+    supplier_name: str
+    order_date: datetime
+    completion_date: datetime | None = None
+    status: str
+
 @router.get("/", response_model=list[CompleteDelivery]) 
 def get_deliveries():
     deliveries_query = """
@@ -95,12 +104,49 @@ def get_deliveries():
 
             return result
 
+
+@router.get("/incomplete", response_model=list[IncompleteDelivery])
+def get_incomplete_deliveries():
+    query = """
+        SELECT id, supplier_id, supplier_name, order_date, completion_date, status
+        FROM incomplete_deliveries_view
+        ORDER BY order_date DESC
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query)
+            deliveries = cur.fetchall()
+
+            return [
+                IncompleteDelivery(
+                    id=delivery["id"],
+                    supplier_id=delivery["supplier_id"],
+                    supplier_name=delivery["supplier_name"],
+                    order_date=delivery["order_date"],
+                    completion_date=delivery["completion_date"],
+                    status=delivery["status"],
+                )
+                for delivery in deliveries
+            ]
+
 @router.post("/", response_model=Delivery)
 def create_delivery(delivery: DeliveryCreate):
     if not delivery.items:
         raise HTTPException(status_code=400, detail="Delivery must contain at least one item")
     check_supplier_query = "SELECT id FROM suppliers WHERE id = %s"
-    check_product_query = "SELECT id FROM products WHERE id = %s"
+    check_product_query = """
+        SELECT
+            p.id,
+            EXISTS (
+                SELECT 1
+                FROM supplier_categories sc
+                WHERE sc.supplier_id = %s
+                  AND sc.category_id = p.category_id
+            ) AS is_supplied_by_supplier
+        FROM products p
+        WHERE p.id = %s
+    """
 
     insert_delivery_query = """
         INSERT INTO deliveries (supplier_id)
@@ -120,9 +166,15 @@ def create_delivery(delivery: DeliveryCreate):
                 raise HTTPException(status_code=400, detail="Supplier not found")
             
             for item in delivery.items:
-                cur.execute(check_product_query, (item.product_id,))
-                if cur.fetchone() is None:
+                cur.execute(check_product_query, (delivery.supplier_id, item.product_id))
+                product = cur.fetchone()
+                if product is None:
                     raise HTTPException(status_code=400, detail=f"Product with id {item.product_id} not found")
+                if not product["is_supplied_by_supplier"]:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Product with id {item.product_id} is not supplied by supplier {delivery.supplier_id}"
+                    )
             
             cur.execute(insert_delivery_query, (delivery.supplier_id,))
             new_delivery = cur.fetchone()
