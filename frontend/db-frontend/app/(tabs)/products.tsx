@@ -1,17 +1,19 @@
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FlatList, Button, TextInput, View, ScrollView } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { Product, ProductCreate } from "@/types/products";
+import { Product, ProductCreate, ProductNewestPrice } from "@/types/products";
 import { Category } from "@/types/categories";
 import { Unit } from "@/types/units";
 import { fetchCategories } from "@/api/categories";
 import { fetchUnits } from "@/api/units";
-import { createProduct, fetchProducts } from "@/api/products";
+import { createProduct, fetchNewestProductPrices, fetchProducts } from "@/api/products";
 
 export default function ProductsScreen() {
     const [products, setProducts] = useState<Product[]>([]);
+    const [newestProductPrices, setNewestProductPrices] = useState<ProductNewestPrice[]>([]);
+    const [selectedPriceProductId, setSelectedPriceProductId] = useState<number | null>(null);
     const [categories, setCategories] = useState<Category[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
     const [form, setForm] = useState<ProductCreate>({
@@ -49,6 +51,8 @@ export default function ProductsScreen() {
     useEffect(() => {
         handleFetchUnits();
         handleFetchCategories();
+        handleFetchProducts();
+        handleFetchNewestProductPrices();
     }, []);
 
     const handleFetchProducts = async () => {
@@ -57,6 +61,15 @@ export default function ProductsScreen() {
             setProducts(response);
         } catch (error) {
             console.error("Error fetching products:", error);
+        }
+    }
+
+    const handleFetchNewestProductPrices = async () => {
+        try {
+            const response = await fetchNewestProductPrices();
+            setNewestProductPrices(response);
+        } catch (error) {
+            console.error("Error fetching newest product prices:", error);
         }
     }
 
@@ -71,11 +84,16 @@ export default function ProductsScreen() {
                 category_name: ""
             });
             handleFetchProducts();
+            handleFetchNewestProductPrices();
         } catch (error) {
             console.error("Error creating product:", error);
         }
     };
 
+    const selectedProductPrice = useMemo(
+        () => newestProductPrices.find((item) => item.product_id === selectedPriceProductId),
+        [newestProductPrices, selectedPriceProductId]
+    );
 
     return (
         <ScrollView style={{ flex: 1 }}>
@@ -92,6 +110,30 @@ export default function ProductsScreen() {
                     </ThemedView>
                 )}
             />
+            <View style={{ height: 1, backgroundColor: 'white', marginVertical: 20 }} />
+            <ThemedText style={{ fontSize: 20, fontWeight: 'bold' }}>Newest Product Price</ThemedText>
+            <Picker
+                selectedValue={selectedPriceProductId}
+                onValueChange={(value) =>
+                    setSelectedPriceProductId(value === null ? null : Number(value))
+                }
+            >
+                <Picker.Item label="Select Product" value={null} />
+                {products.map((product) => (
+                    <Picker.Item key={product.id} label={product.name} value={product.id} />
+                ))}
+            </Picker>
+            {selectedPriceProductId !== null && (
+                <ThemedText>
+                    {selectedProductPrice?.newest_price !== null && selectedProductPrice?.newest_price !== undefined
+                        ? `Newest price: ${selectedProductPrice.newest_price}`
+                        : "This product does not have a delivery price yet."}
+                </ThemedText>
+            )}
+            <View style={{ marginTop: 10 }}>
+                <Button title="Refresh newest prices" onPress={handleFetchNewestProductPrices} />
+            </View>
+
             <View style={{ height: 1, backgroundColor: 'white', marginVertical: 20 }} />
             <ThemedText style={{ fontSize: 20, fontWeight: 'bold' }}>Create New Product</ThemedText>
             <TextInput

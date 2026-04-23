@@ -1,5 +1,5 @@
 from fastapi import HTTPException, APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from database import get_connection
 from datetime import datetime
 
@@ -18,7 +18,7 @@ class DeliveryCreate(BaseModel):
     items: list[DeliveryItemCreate]
 
 class DeliveryCompletionUpdate(BaseModel):
-    completion_date: datetime
+    completion_date: datetime | None = None
 
 class Delivery(DeliveryCreate):
     id: int
@@ -41,6 +41,15 @@ class CompleteDelivery(BaseModel):
     completion_date: datetime | None = None
     status: str
     items: list[CompleteDeliveryItem]
+
+
+class IncompleteDelivery(BaseModel):
+    id: int
+    supplier_id: int
+    supplier_name: str
+    order_date: datetime
+    completion_date: datetime | None = None
+    status: str
 
 @router.get("/", response_model=list[CompleteDelivery]) 
 def get_deliveries():
@@ -95,12 +104,49 @@ def get_deliveries():
 
             return result
 
+
+@router.get("/incomplete", response_model=list[IncompleteDelivery])
+def get_incomplete_deliveries():
+    query = """
+        SELECT id, supplier_id, supplier_name, order_date, completion_date, status
+        FROM incomplete_deliveries_view
+        ORDER BY order_date DESC
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query)
+            deliveries = cur.fetchall()
+
+            return [
+                IncompleteDelivery(
+                    id=delivery["id"],
+                    supplier_id=delivery["supplier_id"],
+                    supplier_name=delivery["supplier_name"],
+                    order_date=delivery["order_date"],
+                    completion_date=delivery["completion_date"],
+                    status=delivery["status"],
+                )
+                for delivery in deliveries
+            ]
+
 @router.post("/", response_model=Delivery)
 def create_delivery(delivery: DeliveryCreate):
     if not delivery.items:
         raise HTTPException(status_code=400, detail="Delivery must contain at least one item")
     check_supplier_query = "SELECT id FROM suppliers WHERE id = %s"
-    check_product_query = "SELECT id FROM products WHERE id = %s"
+    check_product_query = """
+        SELECT
+            p.id,
+            EXISTS (
+                SELECT 1
+                FROM supplier_categories sc
+                WHERE sc.supplier_id = %s
+                  AND sc.category_id = p.category_id
+            ) AS is_supplied_by_supplier
+        FROM products p
+        WHERE p.id = %s
+    """
 
     insert_delivery_query = """
         INSERT INTO deliveries (supplier_id)
@@ -120,9 +166,15 @@ def create_delivery(delivery: DeliveryCreate):
                 raise HTTPException(status_code=400, detail="Supplier not found")
             
             for item in delivery.items:
-                cur.execute(check_product_query, (item.product_id,))
-                if cur.fetchone() is None:
+                cur.execute(check_product_query, (delivery.supplier_id, item.product_id))
+                product = cur.fetchone()
+                if product is None:
                     raise HTTPException(status_code=400, detail=f"Product with id {item.product_id} not found")
+                if not product["is_supplied_by_supplier"]:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Product with id {item.product_id} is not supplied by supplier {delivery.supplier_id}"
+                    )
             
             cur.execute(insert_delivery_query, (delivery.supplier_id,))
             new_delivery = cur.fetchone()
@@ -142,10 +194,12 @@ def create_delivery(delivery: DeliveryCreate):
 
 @router.put("/{delivery_id}/completion-date", response_model=CompleteDelivery)
 def update_delivery_completion_date(delivery_id: int, delivery_update: DeliveryCompletionUpdate):
+    completion_date = delivery_update.completion_date or datetime.now()
+
     update_delivery_query = """
         UPDATE deliveries
         SET completion_date = %s
-        WHERE id = %s AND status <> 'completed'
+        WHERE id = %s AND status = 'pending'
         RETURNING id, supplier_id, order_date, completion_date, status
     """
     supplier_query = "SELECT name FROM suppliers WHERE id = %s"
@@ -159,11 +213,11 @@ def update_delivery_completion_date(delivery_id: int, delivery_update: DeliveryC
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(update_delivery_query, (delivery_update.completion_date, delivery_id))
+            cur.execute(update_delivery_query, (completion_date, delivery_id))
             updated_delivery = cur.fetchone()
 
             if updated_delivery is None:
-                raise HTTPException(status_code=404, detail="Delivery not found or already completed")
+                raise HTTPException(status_code=404, detail="Pending delivery not found")
 
             cur.execute(supplier_query, (updated_delivery["supplier_id"],))
             supplier = cur.fetchone()

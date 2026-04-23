@@ -76,7 +76,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS products (
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL UNIQUE,
-            description TEXT,
+            description VARCHAR(1000),
             quantity DECIMAL(10, 3) NOT NULL,
             unit_id INTEGER NOT NULL,
             category_id INTEGER NOT NULL,
@@ -193,12 +193,42 @@ def init_db():
         )
         """,
         """
-        CREATE OR REPLACE FUNCTION sync_product_stock_with_delivery_items()
+        CREATE OR REPLACE VIEW newest_product_prices_view AS
+        SELECT DISTINCT ON (p.id)
+            p.id AS product_id,
+            p.name AS product_name,
+            di.unit_price AS newest_price,
+            d.id AS delivery_id,
+            d.order_date AS delivery_order_date
+        FROM products p
+        LEFT JOIN delivery_items di ON di.product_id = p.id
+        LEFT JOIN deliveries d ON d.id = di.delivery_id
+        ORDER BY p.id, d.order_date DESC;
+        """,
+        """
+        CREATE OR REPLACE VIEW incomplete_deliveries_view AS
+        SELECT
+            d.id,
+            d.supplier_id,
+            s.name AS supplier_name,
+            d.order_date,
+            d.completion_date,
+            d.status
+        FROM deliveries d
+        JOIN suppliers s ON s.id = d.supplier_id
+        WHERE d.status = 'completed';
+        """,
+        """
+        CREATE OR REPLACE FUNCTION sync_product_stock_on_delivery_completion()
         RETURNS TRIGGER AS $$
         BEGIN
-            UPDATE products
-            SET quantity = quantity + NEW.quantity
-            WHERE id = NEW.product_id;
+            IF OLD.status <> 'completed' AND NEW.status = 'completed' THEN
+                UPDATE products p
+                SET quantity = p.quantity + di.quantity
+                FROM delivery_items di
+                WHERE di.delivery_id = NEW.id
+                  AND di.product_id = p.id;
+            END IF;
 
             RETURN NEW;
         END;
@@ -206,10 +236,11 @@ def init_db():
         """,
         """
         DROP TRIGGER IF EXISTS trg_sync_product_stock_with_delivery_items ON delivery_items;
-        CREATE TRIGGER trg_sync_product_stock_with_delivery_items
-        AFTER INSERT ON delivery_items
+        DROP TRIGGER IF EXISTS trg_sync_product_stock_on_delivery_completion ON deliveries;
+        CREATE TRIGGER trg_sync_product_stock_on_delivery_completion
+        AFTER UPDATE ON deliveries
         FOR EACH ROW
-        EXECUTE FUNCTION sync_product_stock_with_delivery_items();
+        EXECUTE FUNCTION sync_product_stock_on_delivery_completion();
         """
     ]
 

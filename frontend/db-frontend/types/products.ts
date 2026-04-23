@@ -9,3 +9,11 @@ export type ProductCreate = {
 export type Product = ProductCreate & {
     id: number;
 }
+
+export type ProductNewestPrice = {
+    product_id: number;
+    product_name: string;
+    newest_price: number | null;
+    delivery_id: number | null;
+    delivery_order_date: string | null;
+}
