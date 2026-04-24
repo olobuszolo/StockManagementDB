@@ -149,23 +149,15 @@ def init_db():
         """
         CREATE OR REPLACE FUNCTION sync_product_stock_with_order_items()
         RETURNS TRIGGER AS $$
-        DECLARE
-            available_quantity DECIMAL(10, 3);
-            product_name VARCHAR(255);
         BEGIN
-            SELECT quantity, name
-            INTO available_quantity, product_name
-            FROM products
-            WHERE id = NEW.product_id
-            FOR UPDATE;
-
-            IF available_quantity < NEW.quantity THEN
-                RAISE EXCEPTION 'Not enough quantity for product "%"', product_name;
-            END IF;
-
             UPDATE products
             SET quantity = quantity - NEW.quantity
-            WHERE id = NEW.product_id;
+            WHERE id = NEW.product_id
+            AND quantity >= NEW.quantity;
+
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'Not enough quantity for product id %', NEW.product_id;
+            END IF;
 
             RETURN NEW;
         END;
