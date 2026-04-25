@@ -250,7 +250,7 @@ export default function OrdersScreen() {
                                 <View key={index} style={{ marginLeft: 20 }}>
                                     <ThemedText>Product name: {orderItem.product_name}</ThemedText>
                                     <ThemedText>Unit price: {orderItem.unit_price}</ThemedText>
-                                    <ThemedText>Quantity: {orderItem.quantity} {orderItem.unit_name}</ThemedText>
+                                    <ThemedText>Quantity: {orderItem.quantity} x {orderItem.unit_name}</ThemedText>
                                 </View>
                             ))}
                         </View>
@@ -303,7 +303,7 @@ export default function OrdersScreen() {
                             {item.items.map((orderItem, index) => (
                                 <View key={index} style={{ marginLeft: 20 }}>
                                     <ThemedText>Product name: {orderItem.product_name}</ThemedText>
-                                    <ThemedText>Quantity: {orderItem.quantity} {orderItem.unit_name}</ThemedText>
+                                    <ThemedText>Quantity: {orderItem.quantity} x {orderItem.unit_name}</ThemedText>
                                     <ThemedText>Unit price: {orderItem.unit_price}</ThemedText>
                                 </View>
                             ))}

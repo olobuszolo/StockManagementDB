@@ -15,7 +15,9 @@ def init_db():
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             email VARCHAR(255) NOT NULL UNIQUE,
-            nip VARCHAR(10) NOT NULL UNIQUE
+            nip VARCHAR(10) NOT NULL UNIQUE,
+            CHECK (email ~ '^[^@]+@[^@]+\\.[^@]+$'),
+            CHECK (nip ~ '^[0-9]{10}$')
         )
         """,
         """
@@ -36,7 +38,8 @@ def init_db():
             name VARCHAR(255) NOT NULL,
             email VARCHAR(255) NOT NULL UNIQUE,
             nip VARCHAR(10) NOT NULL UNIQUE,
-            CHECK (email ~ '^[^@]+@[^@]+\\.[^@]+$')
+            CHECK (email ~ '^[^@]+@[^@]+\\.[^@]+$'),
+            CHECK (nip ~ '^[0-9]{10}$')
         )
         """,
         """
