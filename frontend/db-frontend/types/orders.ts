@@ -25,6 +25,19 @@ export type Order = {
   customer_name: string;
   order_date: string;
   deadline_date: string;
+  completion_date?: string | null;
   status: string;
   items: OrderItem[];
+};
+
+export type IncompleteOrder = {
+  id: number;
+  employee_id: number;
+  employee_name: string;
+  customer_id: number;
+  customer_name: string;
+  order_date: string;
+  deadline_date: string;
+  completion_date?: string | null;
+  status: string;
 };

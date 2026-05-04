@@ -43,6 +43,14 @@ export default function DeliveriesScreen() {
     const [selectedIncompleteDeliveryId, setSelectedIncompleteDeliveryId] = useState<number | null>(null);
     const [completionDate, setCompletionDate] = useState("");
 
+    const resetDeliveryForm = () => {
+        setSelectedSupplierId(null);
+        setSelectedProductId(null);
+        setQuantity("");
+        setUnitPrice("");
+        setDeliveryItems([]);
+    };
+
     const handleFetchDeliveries = async () => {
         try {
             const response = await fetchDeliveries();
@@ -143,11 +151,7 @@ export default function DeliveriesScreen() {
             await createDelivery(payload);
             console.log("Delivery created in pending status");
 
-            setSelectedSupplierId(null);
-            setDeliveryItems([]);
-            setQuantity("");
-            setUnitPrice("");
-            setSelectedProductId(null);
+            resetDeliveryForm();
 
             await handleFetchDeliveries();
             await handleFetchIncompleteDeliveries();
@@ -219,6 +223,10 @@ export default function DeliveriesScreen() {
         () => products.filter((product) => supplierCategoryNames.has(product.category_name)),
         [products, supplierCategoryNames]
     );
+    const selectedProductUnitName = useMemo(
+        () => productsForSelectedSupplier.find((product) => product.id === selectedProductId)?.unit_name,
+        [productsForSelectedSupplier, selectedProductId]
+    );
 
     return (
     <ScrollView
@@ -247,6 +255,7 @@ export default function DeliveriesScreen() {
                         <View
                             style={{ height: 1, backgroundColor: "gray", marginVertical: 10 }}
                         />
+                        <ThemedText>Delivery ID: {item.id}</ThemedText>
                         <ThemedText>Supplier name: {item.supplier_name}</ThemedText>
                         <ThemedText>Order date: {item.order_date}</ThemedText>
                         <ThemedText>Completion date: {item.completion_date ?? "Not completed"}</ThemedText>
@@ -290,6 +299,7 @@ export default function DeliveriesScreen() {
                     <View
                         style={{ height: 1, backgroundColor: "gray", marginVertical: 10 }}
                     />
+                    <ThemedText>Delivery ID: {delivery.id}</ThemedText>
                     <ThemedText>Supplier name: {delivery.supplier_name}</ThemedText>
                     <ThemedText>Order date: {delivery.order_date}</ThemedText>
                     <ThemedText>Completion date: {delivery.completion_date ?? "Not completed"}</ThemedText>
@@ -344,7 +354,7 @@ export default function DeliveriesScreen() {
         </Picker>
 
         <TextInput
-            placeholder="Quantity"
+            placeholder={selectedProductUnitName ? `Quantity (${selectedProductUnitName})` : "Quantity"}
             value={quantity}
             onChangeText={setQuantity}
             keyboardType="numeric"
@@ -395,6 +405,10 @@ export default function DeliveriesScreen() {
 
         <View style={{ marginTop: 16 }}>
             <Button title="Create delivery" onPress={handleCreateDelivery} />
+        </View>
+
+        <View style={{ marginTop: 12 }}>
+            <Button title="Cancel creating delivery" onPress={resetDeliveryForm} color="#b22222" />
         </View>
 
         <View style={{ height: 1, backgroundColor: "white", marginVertical: 20 }} />

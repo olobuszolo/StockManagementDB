@@ -1,7 +1,8 @@
 from fastapi import HTTPException, APIRouter
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 from database import get_connection
 from datetime import datetime
+import psycopg
 
 router = APIRouter(prefix="/deliveries", tags=["deliveries"])
 
@@ -134,7 +135,6 @@ def get_incomplete_deliveries():
 def create_delivery(delivery: DeliveryCreate):
     if not delivery.items:
         raise HTTPException(status_code=400, detail="Delivery must contain at least one item")
-    check_supplier_query = "SELECT id FROM suppliers WHERE id = %s"
     check_product_query = """
         SELECT
             p.id,
@@ -161,30 +161,35 @@ def create_delivery(delivery: DeliveryCreate):
 
     with get_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(check_supplier_query, (delivery.supplier_id,))
-            if cur.fetchone() is None:
-                raise HTTPException(status_code=400, detail="Supplier not found")
-            
-            for item in delivery.items:
-                cur.execute(check_product_query, (delivery.supplier_id, item.product_id))
-                product = cur.fetchone()
-                if product is None:
-                    raise HTTPException(status_code=400, detail=f"Product with id {item.product_id} not found")
-                if not product["is_supplied_by_supplier"]:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Product with id {item.product_id} is not supplied by supplier {delivery.supplier_id}"
-                    )
-            
-            cur.execute(insert_delivery_query, (delivery.supplier_id,))
+            try:
+                cur.execute(insert_delivery_query, (delivery.supplier_id,))
+            except psycopg.errors.ForeignKeyViolation as exc:
+                raise HTTPException(status_code=400, detail=str(exc).strip()) from exc
+
             new_delivery = cur.fetchone()
             if new_delivery is None:
                 raise HTTPException(status_code=400, detail="Failed to create delivery")
             
+            for item in delivery.items:
+                cur.execute(check_product_query, (delivery.supplier_id, item.product_id))
+                product = cur.fetchone()
+                if product is not None and not product["is_supplied_by_supplier"]:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Product with id {item.product_id} is not supplied by supplier {delivery.supplier_id}"
+                    )
+
             delivery_id = new_delivery["id"]
             items = []
             for item in delivery.items:
-                cur.execute(insert_delivery_item_query, (delivery_id, item.product_id, item.quantity, item.unit_price))
+                try:
+                    cur.execute(insert_delivery_item_query, (delivery_id, item.product_id, item.quantity, item.unit_price))
+                except (
+                    psycopg.errors.CheckViolation,
+                    psycopg.errors.ForeignKeyViolation,
+                ) as exc:
+                    raise HTTPException(status_code=400, detail=str(exc).strip()) from exc
+
                 new_item = cur.fetchone()
                 if new_item is None:
                     raise HTTPException(status_code=400, detail="Failed to create delivery item")
@@ -221,8 +226,6 @@ def update_delivery_completion_date(delivery_id: int, delivery_update: DeliveryC
 
             cur.execute(supplier_query, (updated_delivery["supplier_id"],))
             supplier = cur.fetchone()
-            if supplier is None:
-                raise HTTPException(status_code=400, detail="Supplier not found")
 
             cur.execute(items_query, (delivery_id,))
             items_data = cur.fetchall()

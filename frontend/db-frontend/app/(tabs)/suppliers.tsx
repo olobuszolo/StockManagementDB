@@ -2,11 +2,12 @@ import { assignCategoryToSupplier, createSupplier, fetchCategoriesBySupplier, fe
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BusinessEntity, BusinessEntityCreate } from "@/types/customers";
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { FlatList, Button, TextInput, View, ScrollView } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import { Category, CategoryBySupplier } from "@/types/categories";
 import { fetchCategories } from "@/api/categories";
+import { useFocusEffect } from "@react-navigation/native";
 
 export default function SuppliersScreen() {
     const [suppliers, setSuppliers] = useState<BusinessEntity[]>([]);
@@ -51,6 +52,7 @@ export default function SuppliersScreen() {
         try {            
             await createSupplier(form);
             setForm({ name: "", email: "", nip: "" });
+            await handleFetchSuppliers();
         } catch (error) {
             console.error("Error creating supplier:", error);
         }
@@ -77,15 +79,20 @@ export default function SuppliersScreen() {
         try {
             await assignCategoryToSupplier(selectedAssignSupplierId, selectedAssignCategoryId);
             console.log("Category assigned successfully");
+            if (selectedSupplierId === selectedAssignSupplierId) {
+                await handleFetchCategoriesBySupplier();
+            }
         } catch (error) {
             console.error("Error assigning category to supplier:", error);
         }
     }
 
-    useEffect(() => {
-        handleFetchSuppliers();
-        handleFetchCategories();
-    }, []);
+    useFocusEffect(
+        useCallback(() => {
+            handleFetchSuppliers();
+            handleFetchCategories();
+        }, [])
+    );
 
     return (
         <ScrollView style={{ flex: 1 }}>
@@ -132,8 +139,8 @@ export default function SuppliersScreen() {
                 <Picker
                     selectedValue={selectedSupplierId}
                     onValueChange={(itemValue) => {
-                        setSelectedSupplierId(itemValue)}}
-                    style={{ color: "black" }}
+                        setSelectedSupplierId(itemValue === null ? null : Number(itemValue))}}
+                    style={{ color: "black", backgroundColor: "white" }}
                 >
                     <Picker.Item label="Select supplier..." value={null} color="gray" />
                     {suppliers.map((supplier) => (
@@ -160,8 +167,8 @@ export default function SuppliersScreen() {
                 <Picker
                     selectedValue={selectedAssignSupplierId}
                     onValueChange={(itemValue) => {
-                        setSelectedAssignSupplierId(itemValue)}}
-                    style={{ color: "black" }}
+                        setSelectedAssignSupplierId(itemValue === null ? null : Number(itemValue))}}
+                    style={{ color: "black", backgroundColor: "white" }}
                 >
                     <Picker.Item label="Select supplier..." value={null} color="gray" />
                     {suppliers.map((supplier) => (
@@ -175,8 +182,8 @@ export default function SuppliersScreen() {
                 <Picker
                     selectedValue={selectedAssignCategoryId}
                     onValueChange={(itemValue) => {
-                        setSelectedAssignCategoryId(itemValue)}}
-                    style={{ color: "black" }}
+                        setSelectedAssignCategoryId(itemValue === null ? null : Number(itemValue))}}
+                    style={{ color: "black", backgroundColor: "white" }}
                 >
                     <Picker.Item label="Select category..." value={null} color="gray" />
                     {categories.map((category) => (

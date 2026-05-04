@@ -15,7 +15,9 @@ def init_db():
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             email VARCHAR(255) NOT NULL UNIQUE,
-            nip VARCHAR(10) NOT NULL UNIQUE
+            nip VARCHAR(10) NOT NULL UNIQUE,
+            CHECK (email ~ '^[^@]+@[^@]+\\.[^@]+$'),
+            CHECK (nip ~ '^[0-9]{10}$')
         )
         """,
         """
@@ -36,8 +38,18 @@ def init_db():
             name VARCHAR(255) NOT NULL,
             email VARCHAR(255) NOT NULL UNIQUE,
             nip VARCHAR(10) NOT NULL UNIQUE,
-            CHECK (email ~ '^[^@]+@[^@]+\\.[^@]+$')
+            CHECK (email ~ '^[^@]+@[^@]+\\.[^@]+$'),
+            CHECK (nip ~ '^[0-9]{10}$')
         )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS supplier_categories (
+            supplier_id INTEGER NOT NULL,
+            category_id INTEGER NOT NULL,
+            PRIMARY KEY (supplier_id, category_id),
+            FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+            FOREIGN KEY (category_id) REFERENCES categories(id)
+        );
         """,
         """
         CREATE TABLE IF NOT EXISTS orders (
@@ -46,18 +58,20 @@ def init_db():
             customer_id INTEGER NOT NULL,
             order_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             deadline_date TIMESTAMP,
+            completion_date TIMESTAMP,
             status VARCHAR(50) NOT NULL DEFAULT 'pending',
             FOREIGN KEY (employee_id) REFERENCES employees(id),
             FOREIGN KEY (customer_id) REFERENCES customers(id),
-            CHECK (status IN ('pending', 'completed', 'cancelled')),
-            CHECK (deadline_date > order_date)
+            CHECK (status IN ('pending', 'completed')),
+            CHECK (deadline_date > order_date),
+            CHECK (completion_date IS NULL OR completion_date > order_date)
         )
         """,
         """
         CREATE OR REPLACE FUNCTION set_deadline_date()
         RETURNS TRIGGER AS $$
         BEGIN
-            IF NEW.order_date IS NOT NULL AND NEW.deadline_date IS NULL THEN
+            IF NEW.deadline_date IS NULL THEN
                 NEW.deadline_date := NEW.order_date + INTERVAL '7 days';
             END IF;
 
@@ -71,6 +85,25 @@ def init_db():
         BEFORE INSERT OR UPDATE ON orders
         FOR EACH ROW
         EXECUTE FUNCTION set_deadline_date();
+        """,
+        """
+        CREATE OR REPLACE FUNCTION set_order_status_from_completion_date()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            IF NEW.completion_date IS NOT NULL THEN
+                NEW.status := 'completed';
+            END IF;
+
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """,
+        """
+        DROP TRIGGER IF EXISTS trg_set_order_status_from_completion_date ON orders;
+        CREATE TRIGGER trg_set_order_status_from_completion_date
+        BEFORE INSERT OR UPDATE ON orders
+        FOR EACH ROW
+        EXECUTE FUNCTION set_order_status_from_completion_date();
         """,
         """
         CREATE TABLE IF NOT EXISTS products (
@@ -119,23 +152,15 @@ def init_db():
         """
         CREATE OR REPLACE FUNCTION sync_product_stock_with_order_items()
         RETURNS TRIGGER AS $$
-        DECLARE
-            available_quantity DECIMAL(10, 3);
-            product_name VARCHAR(255);
         BEGIN
-            SELECT quantity, name
-            INTO available_quantity, product_name
-            FROM products
-            WHERE id = NEW.product_id
-            FOR UPDATE;
-
-            IF available_quantity < NEW.quantity THEN
-                RAISE EXCEPTION 'Not enough quantity for product "%"', product_name;
-            END IF;
-
             UPDATE products
             SET quantity = quantity - NEW.quantity
-            WHERE id = NEW.product_id;
+            WHERE id = NEW.product_id
+            AND quantity >= NEW.quantity;
+
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'Not enough quantity for product id %', NEW.product_id;
+            END IF;
 
             RETURN NEW;
         END;
@@ -144,7 +169,7 @@ def init_db():
         """
         DROP TRIGGER IF EXISTS trg_sync_product_stock_with_order_items ON order_items;
         CREATE TRIGGER trg_sync_product_stock_with_order_items
-        AFTER INSERT ON order_items
+        BEFORE INSERT ON order_items
         FOR EACH ROW
         EXECUTE FUNCTION sync_product_stock_with_order_items();
         """,
@@ -156,7 +181,7 @@ def init_db():
             completion_date TIMESTAMP,
             status VARCHAR(50) NOT NULL DEFAULT 'pending',
             FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
-            CHECK (status IN ('pending', 'completed', 'cancelled')),
+            CHECK (status IN ('pending', 'completed')),
             CHECK (completion_date > order_date)
         )
         """, 
@@ -216,7 +241,24 @@ def init_db():
             d.status
         FROM deliveries d
         JOIN suppliers s ON s.id = d.supplier_id
-        WHERE d.status = 'completed';
+        WHERE d.status = 'pending';
+        """,
+        """
+        CREATE OR REPLACE VIEW incomplete_orders_view AS
+        SELECT
+            o.id,
+            o.employee_id,
+            e.name AS employee_name,
+            o.customer_id,
+            c.name AS customer_name,
+            o.order_date,
+            o.deadline_date,
+            o.completion_date,
+            o.status
+        FROM orders o
+        JOIN employees e ON e.id = o.employee_id
+        JOIN customers c ON c.id = o.customer_id
+        WHERE o.status = 'pending';
         """,
         """
         CREATE OR REPLACE FUNCTION sync_product_stock_on_delivery_completion()
@@ -235,7 +277,6 @@ def init_db():
         $$ LANGUAGE plpgsql;
         """,
         """
-        DROP TRIGGER IF EXISTS trg_sync_product_stock_with_delivery_items ON delivery_items;
         DROP TRIGGER IF EXISTS trg_sync_product_stock_on_delivery_completion ON deliveries;
         CREATE TRIGGER trg_sync_product_stock_on_delivery_completion
         AFTER UPDATE ON deliveries
